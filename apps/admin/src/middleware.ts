@@ -1,0 +1,26 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (
+    pathname === '/login' ||
+    pathname.startsWith('/_next') ||
+    pathname === '/favicon.ico'
+  ) {
+    return NextResponse.next();
+  }
+
+  const hasAuth = request.cookies.get('nk_auth')?.value === '1';
+  if (!hasAuth) {
+    const loginUrl = new URL('/login', request.url);
+    if (pathname !== '/') loginUrl.searchParams.set('from', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};

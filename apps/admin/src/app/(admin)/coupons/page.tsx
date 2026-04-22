@@ -1,0 +1,163 @@
+'use client';
+
+import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
+
+import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { apiDelete, apiGet } from '@/lib/api';
+import { cn, formatCLP } from '@/lib/utils';
+
+interface Coupon {
+  id: string;
+  code: string;
+  type: 'PERCENTAGE' | 'FIXED';
+  value: number;
+  minOrderAmount: number | null;
+  maxUses: number | null;
+  usedCount: number;
+  validUntil: string | null;
+  active: boolean;
+}
+
+export default function CouponsListPage() {
+  const [data, setData] = useState<Coupon[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const res = await apiGet<{ data: Coupon[] }>(
+        '/admin/coupons?limit=100',
+      );
+      setData(res.data);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleDelete(id: string, code: string) {
+    if (!window.confirm(`¿Eliminar cupón "${code}"?`)) return;
+    try {
+      await apiDelete(`/admin/coupons/${id}`);
+      load();
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Cupones</h1>
+          <p className="text-sm text-muted-foreground">
+            Descuentos que los clientes pueden aplicar en el carrito.
+          </p>
+        </div>
+        <Link href="/coupons/new" className={cn(buttonVariants())}>
+          <Plus className="size-4" />
+          Nuevo cupón
+        </Link>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {data === null ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="animate-spin text-muted-foreground" />
+        </div>
+      ) : data.length === 0 ? (
+        <div className="text-sm text-muted-foreground py-12 text-center">
+          No hay cupones todavía.
+        </div>
+      ) : (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Código</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead>Monto mínimo</TableHead>
+                <TableHead>Usos</TableHead>
+                <TableHead>Válido hasta</TableHead>
+                <TableHead className="w-24">Estado</TableHead>
+                <TableHead className="w-32 text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-mono font-medium">
+                    {c.code}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.type === 'PERCENTAGE' ? '%' : 'CLP'}
+                  </TableCell>
+                  <TableCell>
+                    {c.type === 'PERCENTAGE'
+                      ? `${c.value}%`
+                      : formatCLP(c.value)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.minOrderAmount ? formatCLP(c.minOrderAmount) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {c.usedCount} / {c.maxUses ?? '∞'}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {c.validUntil
+                      ? new Date(c.validUntil).toLocaleDateString('es-CL')
+                      : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={c.active ? 'success' : 'secondary'}>
+                      {c.active ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Link
+                      href={`/coupons/${c.id}`}
+                      className={cn(
+                        buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      )}
+                      aria-label="Editar"
+                    >
+                      <Pencil className="size-4" />
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(c.id, c.code)}
+                      aria-label="Eliminar"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
