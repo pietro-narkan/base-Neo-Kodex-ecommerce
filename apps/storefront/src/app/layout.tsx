@@ -1,5 +1,10 @@
 import type { Metadata } from 'next';
 
+import { Footer } from '@/components/layout/footer';
+import { Header } from '@/components/layout/header';
+import { AuthProvider } from '@/lib/auth';
+import { CartProvider } from '@/lib/cart';
+
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -14,7 +19,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>
+          <CartProvider>
+            <div className="flex flex-col min-h-screen">
+              <Header />
+              <main className="flex-1">{children}</main>
+              <Footer />
+            </div>
+          </CartProvider>
+        </AuthProvider>
+      </body>
     </html>
   );
 }
