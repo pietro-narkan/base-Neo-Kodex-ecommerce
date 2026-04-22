@@ -46,7 +46,8 @@ COPY packages/config/package.json ./packages/config/
 RUN pnpm install --prod --frozen-lockfile --filter "@neo-kodex/api..."
 # Generar Prisma Client + engine musl (necesita schema y el CLI, ahora en deps)
 COPY apps/api/prisma ./apps/api/prisma
-RUN cd apps/api && /app/node_modules/.bin/prisma generate
+# pnpm exec resuelve el binary: con --filter puede quedar en apps/api/node_modules/.bin
+RUN pnpm --filter @neo-kodex/api exec prisma generate
 
 # ============================================================
 # runtime (imagen final, slim)
