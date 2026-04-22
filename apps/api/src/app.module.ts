@@ -13,6 +13,7 @@ import { MediaModule } from './media/media.module';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { ProvidersModule } from './providers/providers.module';
 import { StorageModule } from './storage/storage.module';
 import { VariantsModule } from './variants/variants.module';
 
@@ -24,6 +25,7 @@ import { VariantsModule } from './variants/variants.module';
     }),
     PrismaModule,
     StorageModule,
+    ProvidersModule,
     AuthModule,
     CategoriesModule,
     AttributesModule,

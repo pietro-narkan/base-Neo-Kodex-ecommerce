@@ -1,12 +1,18 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { DocumentType, OrderStatus, Prisma } from '@prisma/client';
 
 import { CouponsService } from '../coupons/coupons.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { DteService } from '../providers/dte.service';
+import type { DocumentTypeLiteral } from '../providers/dte.service';
+import { EmailService } from '../providers/email.service';
+import { PaymentService } from '../providers/payment.service';
+import { ShippingService } from '../providers/shipping.service';
 import type { AddressDto, CheckoutDto } from './dto/orders.dto';
 
 const ORDER_COUNTER_KEY = 'order.last_number';
@@ -44,11 +50,23 @@ const cartIncludeForCheckout = {
   },
 } satisfies Prisma.CartInclude;
 
+type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+
+function formatCLP(amount: number): string {
+  return amount.toLocaleString('es-CL');
+}
+
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly coupons: CouponsService,
+    private readonly payment: PaymentService,
+    private readonly email: EmailService,
+    private readonly dte: DteService,
+    private readonly shipping: ShippingService,
   ) {}
 
   async checkout(params: {
@@ -61,8 +79,23 @@ export class OrdersService {
       throw new BadRequestException('El carrito está vacío');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Reservar stock atómicamente
+    // Cálculo del envío ANTES de la transacción (no bloquea DB en una llamada externa).
+    const subtotalGrossPreview = cart.items.reduce(
+      (s, i) => s + i.variant.priceGross * i.quantity,
+      0,
+    );
+    const shippingQuotes = await this.shipping.quote({
+      address: params.dto.shippingAddress,
+      items: cart.items.map((i) => ({
+        weightGrams: i.variant.weightGrams,
+        quantity: i.quantity,
+      })),
+      subtotalGross: subtotalGrossPreview,
+    });
+    const shippingAmount = shippingQuotes[0]?.cost ?? 0;
+
+    // Transacción: stock + orden + cupón + borrar cart
+    const order = await this.prisma.$transaction(async (tx) => {
       for (const item of cart.items) {
         const result = await tx.variant.updateMany({
           where: { id: item.variantId, stock: { gte: item.quantity } },
@@ -79,7 +112,6 @@ export class OrdersService {
         }
       }
 
-      // 2. Totales
       const subtotalNet = cart.items.reduce(
         (s, i) => s + i.variant.priceNet * i.quantity,
         0,
@@ -90,7 +122,6 @@ export class OrdersService {
       );
       const taxAmount = subtotalGross - subtotalNet;
 
-      // 3. Cupón (si hay)
       let discountAmount = 0;
       let couponId: string | null = null;
       if (cart.couponCode) {
@@ -106,13 +137,12 @@ export class OrdersService {
           discountAmount = 0;
         }
       }
-      const shippingAmount = 0;
+
       const total = Math.max(
         0,
         subtotalGross - discountAmount + shippingAmount,
       );
 
-      // 4. Cliente (registrado o guest)
       let customerId = params.customerId;
       if (!customerId) {
         const existing = await tx.customer.findUnique({
@@ -146,7 +176,6 @@ export class OrdersService {
         }
       }
 
-      // 5. Direcciones
       const shippingAddress = await tx.address.create({
         data: {
           customerId,
@@ -162,11 +191,9 @@ export class OrdersService {
           })
         : shippingAddress;
 
-      // 6. Order number
       const orderNumber = await this.nextOrderNumber(tx);
 
-      // 7. Crear order con items (snapshot)
-      const order = await tx.order.create({
+      const created = await tx.order.create({
         data: {
           orderNumber,
           customerId,
@@ -187,7 +214,8 @@ export class OrdersService {
           shippingAddressId: shippingAddress.id,
           billingAddressId: billingAddress.id,
           documentType: (params.dto.documentType ?? 'NONE') as DocumentType,
-          paymentProvider: 'manual',
+          paymentProvider: this.payment.providerName,
+          shippingProvider: shippingQuotes[0]?.code ?? null,
           notes: params.dto.notes,
           items: {
             create: cart.items.map((i) => ({
@@ -206,7 +234,6 @@ export class OrdersService {
         include: orderInclude,
       });
 
-      // 8. Incrementar uso del cupón
       if (couponId) {
         await tx.coupon.update({
           where: { id: couponId },
@@ -214,11 +241,42 @@ export class OrdersService {
         });
       }
 
-      // 9. Borrar el carrito
       await tx.cart.delete({ where: { id: cart.id } });
 
-      return order;
+      return created;
     });
+
+    // ===== Post-commit hooks =====
+    let paymentInstructions: string | undefined;
+    try {
+      const paymentResult = await this.payment.init({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        total: order.total,
+        email: order.email,
+        firstName: order.firstName,
+        lastName: order.lastName,
+      });
+      paymentInstructions = paymentResult.instructions;
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { paymentReference: paymentResult.reference },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Payment init falló para orden ${order.orderNumber}: ${(err as Error).message}`,
+      );
+    }
+
+    // Email "orden recibida" con instrucciones de pago (best-effort, no tira errores)
+    await this.email.send({
+      to: order.email,
+      subject: `Orden recibida — ${order.orderNumber}`,
+      text: this.buildOrderCreatedText(order, paymentInstructions),
+      html: this.buildOrderCreatedHtml(order, paymentInstructions),
+    });
+
+    return { ...order, paymentInstructions };
   }
 
   async listMine(
@@ -301,7 +359,10 @@ export class OrdersService {
     const current = await this.getByIdAdmin(id);
     if (current.status === status) return current;
 
-    return this.prisma.$transaction(async (tx) => {
+    const wasPaid = current.status === 'PAID';
+    const willBePaid = status === 'PAID';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
       const isEndState = status === 'CANCELLED' || status === 'REFUNDED';
       const wasEndState =
         current.status === 'CANCELLED' || current.status === 'REFUNDED';
@@ -348,6 +409,158 @@ export class OrdersService {
         include: orderInclude,
       });
     });
+
+    // ===== Post-commit hooks =====
+    if (willBePaid && !wasPaid) {
+      await this.onOrderPaid(updated);
+      return this.getByIdAdmin(id);
+    }
+    if (status === 'REFUNDED' && wasPaid && current.paymentReference) {
+      try {
+        await this.payment.refund(current.paymentReference);
+      } catch (err) {
+        this.logger.error(
+          `Refund falló para orden ${current.orderNumber}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return updated;
+  }
+
+  // ===== Post-commit hooks =====
+
+  private async onOrderPaid(order: OrderWithRelations): Promise<void> {
+    // Email de confirmación
+    await this.email.send({
+      to: order.email,
+      subject: `Pago confirmado — ${order.orderNumber}`,
+      text: this.buildOrderPaidText(order),
+      html: this.buildOrderPaidHtml(order),
+    });
+
+    // Emisión de DTE si corresponde
+    if (order.documentType !== 'NONE') {
+      const result = await this.dte.emit({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        documentType: order.documentType as DocumentTypeLiteral,
+        email: order.email,
+        firstName: order.firstName,
+        lastName: order.lastName,
+        rut: order.rut,
+        subtotalNet: order.subtotalNet,
+        taxAmount: order.taxAmount,
+        total: order.total,
+        items: order.items.map((i) => ({
+          productName: i.productName,
+          variantName: i.variantName,
+          sku: i.sku,
+          quantity: i.quantity,
+          priceNet: i.priceNet,
+          priceGross: i.priceGross,
+        })),
+      });
+      if (result) {
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: {
+            documentFolio: result.folio,
+            documentNumber: result.number,
+            documentUrl: result.pdfUrl,
+          },
+        });
+      }
+    }
+  }
+
+  // ===== Email templates =====
+
+  private itemsText(order: OrderWithRelations): string {
+    return order.items
+      .map(
+        (i) =>
+          `  - ${i.productName}${i.variantName ? ` (${i.variantName})` : ''} x ${i.quantity}  →  $${formatCLP(i.subtotal)}`,
+      )
+      .join('\n');
+  }
+
+  private itemsHtml(order: OrderWithRelations): string {
+    return order.items
+      .map(
+        (i) =>
+          `<li>${i.productName}${i.variantName ? ` (${i.variantName})` : ''} × ${i.quantity} — $${formatCLP(i.subtotal)}</li>`,
+      )
+      .join('');
+  }
+
+  private buildOrderCreatedText(
+    order: OrderWithRelations,
+    paymentInstructions?: string,
+  ): string {
+    return [
+      `¡Hola ${order.firstName}! Recibimos tu orden ${order.orderNumber}.`,
+      '',
+      'Resumen:',
+      this.itemsText(order),
+      '',
+      `Subtotal:  $${formatCLP(order.subtotalGross)}`,
+      `Descuento: -$${formatCLP(order.discountAmount)}`,
+      `Envío:     $${formatCLP(order.shippingAmount)}`,
+      `Total:     $${formatCLP(order.total)}`,
+      '',
+      paymentInstructions
+        ? `Instrucciones de pago:\n${paymentInstructions}`
+        : '',
+      '',
+      'Te avisaremos cuando confirmemos el pago.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private buildOrderCreatedHtml(
+    order: OrderWithRelations,
+    paymentInstructions?: string,
+  ): string {
+    const instructionsBlock = paymentInstructions
+      ? `<h3>Instrucciones de pago</h3><pre style="background:#f5f5f5;padding:12px;border-radius:4px;white-space:pre-wrap;">${paymentInstructions}</pre>`
+      : '';
+    return `
+<h2>¡Gracias por tu compra!</h2>
+<p>Hola <strong>${order.firstName}</strong>, recibimos tu orden <strong>${order.orderNumber}</strong>.</p>
+<ul>${this.itemsHtml(order)}</ul>
+<table>
+  <tr><td>Subtotal</td><td style="text-align:right">$${formatCLP(order.subtotalGross)}</td></tr>
+  <tr><td>Descuento</td><td style="text-align:right">-$${formatCLP(order.discountAmount)}</td></tr>
+  <tr><td>Envío</td><td style="text-align:right">$${formatCLP(order.shippingAmount)}</td></tr>
+  <tr><td><strong>Total</strong></td><td style="text-align:right"><strong>$${formatCLP(order.total)}</strong></td></tr>
+</table>
+${instructionsBlock}
+<p>Te avisaremos cuando confirmemos el pago.</p>
+    `.trim();
+  }
+
+  private buildOrderPaidText(order: OrderWithRelations): string {
+    return [
+      `¡Hola ${order.firstName}! Confirmamos el pago de tu orden ${order.orderNumber}.`,
+      '',
+      'Resumen:',
+      this.itemsText(order),
+      '',
+      `Total pagado: $${formatCLP(order.total)}`,
+      '',
+      'Estamos preparando tu envío.',
+    ].join('\n');
+  }
+
+  private buildOrderPaidHtml(order: OrderWithRelations): string {
+    return `
+<h2>¡Pago confirmado!</h2>
+<p>Hola <strong>${order.firstName}</strong>, confirmamos el pago de tu orden <strong>${order.orderNumber}</strong>.</p>
+<ul>${this.itemsHtml(order)}</ul>
+<p><strong>Total pagado: $${formatCLP(order.total)}</strong></p>
+<p>Estamos preparando tu envío.</p>
+    `.trim();
   }
 
   // ===== Helpers =====

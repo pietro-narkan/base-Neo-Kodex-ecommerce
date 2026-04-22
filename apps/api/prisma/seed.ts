@@ -28,6 +28,14 @@ async function main() {
     { key: 'store.tax_rate_bp', value: 1900 },
     { key: 'store.contact_email', value: 'contacto@neo-kodex.local' },
     { key: 'store.description', value: 'Base ecommerce Neo-Kodex' },
+    {
+      key: 'store.bank_details',
+      value:
+        'Banco Estado — Cuenta Vista\nTitular: (configurar)\nRUT: (configurar)\nN° cuenta: (configurar)\nEmail aviso: (configurar)',
+    },
+    { key: 'store.shipping_flat_rate', value: 3990 },
+    { key: 'store.shipping_free_threshold', value: 50000 },
+    { key: 'store.email_from', value: 'no-reply@neo-kodex.local' },
   ];
   for (const s of settings) {
     await prisma.setting.upsert({
