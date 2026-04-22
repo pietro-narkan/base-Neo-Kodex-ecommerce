@@ -1,7 +1,9 @@
 name: neo-kodex
 
-# Production docker-compose (para Coolify "Docker Compose" resource).
-# Para local dev usar docker-compose.yml en la raíz.
+# Production docker-compose para Coolify "Docker Compose" resource.
+# Coolify resuelve los magic vars SERVICE_URL_<SERVICE>_<PORT> con los FQDN
+# auto-generados (sslip.io o custom domain). El resto (secretos) vienen
+# configurados en Coolify como env vars de la aplicacion.
 
 services:
   postgres:
@@ -18,18 +20,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # No ports expuestos: solo network interno
 
   minio:
     image: minio/minio:latest
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-nkadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
     command: server /data --console-address ":9001"
     volumes:
       - miniodata:/data
-    # Coolify puede exponer los ports 9000 y 9001 con FQDNs auto
-    # (SERVICE_FQDN_MINIO_9000 y SERVICE_FQDN_MINIO_9001)
+    ports:
+      - "9000"  # API S3 (publico para servir imagenes)
+      - "9001"  # Console web (publico para admin)
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 30s
@@ -42,7 +46,7 @@ services:
       minio:
         condition: service_started
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-nkadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
       MINIO_BUCKET: ${MINIO_BUCKET:-neo-kodex-media}
     entrypoint: >
@@ -63,27 +67,26 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-neokodex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neokodex}?schema=public"
-      PORT: 3001
+      PORT: "3001"
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:?required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       REFRESH_SECRET: ${REFRESH_SECRET:?required}
       REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN:-30d}
-      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      # Magic vars de Coolify: URLs publicas de admin + storefront
+      CORS_ORIGIN: "${SERVICE_URL_ADMIN_3000},${SERVICE_URL_STOREFRONT_3002}"
       MINIO_ENDPOINT: minio
       MINIO_PORT: "9000"
       MINIO_USE_SSL: "false"
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-nkadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET:-neo-kodex-media}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_PUBLIC_URL: "${SERVICE_URL_MINIO_9000}"
       TAX_RATE_BP: "1900"
       PAYMENT_PROVIDER: manual
       EMAIL_PROVIDER: console
       DTE_PROVIDER: mock
       SHIPPING_PROVIDER: flat
-    # Coolify expone este service con FQDN auto (sslip.io).
-    # El magic var SERVICE_FQDN_API_3001 lo toma el admin/storefront.
     ports:
       - "3001"
 
@@ -91,12 +94,15 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
+      args:
+        # Next hornea NEXT_PUBLIC_* en build time, asi que lo pasamos como ARG
+        NEXT_PUBLIC_API_URL: "${SERVICE_URL_API_3001}/api"
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NEXT_PUBLIC_API_URL: "${SERVICE_URL_API_3001}/api"
     ports:
       - "3000"
 
@@ -104,12 +110,14 @@ services:
     build:
       context: .
       dockerfile: apps/storefront/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "${SERVICE_URL_API_3001}/api"
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NEXT_PUBLIC_API_URL: "${SERVICE_URL_API_3001}/api"
     ports:
       - "3002"
 
