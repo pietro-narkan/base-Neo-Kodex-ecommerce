@@ -1,0 +1,59 @@
+name: neo-kodex-ecommerce
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: neo-kodex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: neokodex
+      POSTGRES_PASSWORD: neokodex
+      POSTGRES_DB: neokodex
+    ports:
+      # 5432 está ocupado por plaza; usamos 5433 para no chocar
+      - "5433:5432"
+    volumes:
+      - neo_kodex_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neokodex -d neokodex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: neo-kodex-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # API S3-compatible
+      - "9001:9001"  # consola web
+    volumes:
+      - neo_kodex_minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: neo-kodex-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin) do echo 'waiting for minio...' && sleep 2; done;
+      /usr/bin/mc mb --ignore-existing local/neo-kodex-media;
+      /usr/bin/mc anonymous set download local/neo-kodex-media;
+      echo 'minio bucket ready';
+      exit 0;
+      "
+
+volumes:
+  neo_kodex_pgdata:
+  neo_kodex_minio:

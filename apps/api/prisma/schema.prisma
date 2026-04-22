@@ -1,0 +1,376 @@
+// ================================================================
+// Neo-Kodex Ecommerce — Prisma Schema
+// Base ecommerce estándar; precios CLP como Int; DTE preparado.
+// ================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================================================
+// Enums
+// ================================================================
+
+enum AdminRole {
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DocumentType {
+  NONE
+  BOLETA
+  FACTURA
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}
+
+// ================================================================
+// Auth
+// ================================================================
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  role         AdminRole @default(ADMIN)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
+  phone        String?
+  rut          String?
+  isGuest      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  addresses Address[]
+  orders    Order[]
+  carts     Cart[]
+
+  @@index([isGuest])
+}
+
+// ================================================================
+// Catalog
+// ================================================================
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  parentId    String?
+  parent      Category? @relation("CategoryTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children    Category[] @relation("CategoryTree")
+  products    Product[]
+  order       Int       @default(0)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([parentId])
+  @@index([active])
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  name            String
+  slug            String    @unique
+  description     String?
+  shortDesc       String?
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  active          Boolean   @default(true)
+  featured        Boolean   @default(false)
+  metaTitle       String?
+  metaDescription String?
+
+  variants Variant[]
+  media    Media[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([active])
+  @@index([featured])
+}
+
+model Variant {
+  id             String  @id @default(cuid())
+  productId      String
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku            String  @unique
+  name           String?
+  // Prices in CLP as whole integer units (no decimals)
+  priceNet       Int
+  priceGross     Int
+  compareAtPrice Int?
+  stock          Int     @default(0)
+  // Logistics (standard ecommerce, optional)
+  weightGrams    Int?
+  lengthCm       Int?
+  widthCm        Int?
+  heightCm       Int?
+  active         Boolean @default(true)
+
+  attributes VariantAttribute[]
+  media      Media[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@index([active])
+}
+
+model Attribute {
+  id        String           @id @default(cuid())
+  name      String           @unique
+  slug      String           @unique
+  values    AttributeValue[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model AttributeValue {
+  id          String    @id @default(cuid())
+  attributeId String
+  attribute   Attribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  value       String
+  slug        String
+
+  variants VariantAttribute[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([attributeId, slug])
+}
+
+model VariantAttribute {
+  variantId        String
+  variant          Variant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributeValueId String
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, attributeValueId])
+  @@index([attributeValueId])
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  key       String?
+  alt       String?
+  position  Int      @default(0)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([variantId])
+}
+
+// ================================================================
+// Cart
+// ================================================================
+
+model Cart {
+  id         String     @id @default(cuid())
+  customerId String?
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sessionId  String?    @unique
+  couponCode String?
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([customerId])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   Variant  @relation(fields: [variantId], references: [id])
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+}
+
+// ================================================================
+// Orders
+// ================================================================
+
+model Order {
+  id          String @id @default(cuid())
+  orderNumber String @unique
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // Snapshot of customer info (required for guest orders and audit)
+  email     String
+  firstName String
+  lastName  String
+  phone     String?
+  rut       String?
+
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+
+  // Monetary fields — CLP as Int
+  subtotalNet    Int
+  subtotalGross  Int
+  taxAmount      Int
+  shippingAmount Int @default(0)
+  discountAmount Int @default(0)
+  total          Int
+
+  couponCode String?
+
+  shippingAddressId String?
+  shippingAddress   Address? @relation("ShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  billingAddressId  String?
+  billingAddress    Address? @relation("BillingAddress", fields: [billingAddressId], references: [id], onDelete: SetNull)
+
+  // DTE (Chile SII)
+  documentType   DocumentType @default(NONE)
+  documentFolio  String?
+  documentNumber String?
+  documentUrl    String?
+
+  // Payment gateway reference
+  paymentProvider  String?
+  paymentReference String?
+
+  // Shipping tracking
+  shippingProvider String?
+  trackingNumber   String?
+
+  items OrderItem[]
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([email])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  // Snapshot fields (preserved even if the source variant/product changes or is deleted)
+  productName String
+  variantName String?
+  sku         String
+  priceNet    Int
+  priceGross  Int
+  taxAmount   Int
+  quantity    Int
+  subtotal    Int
+}
+
+model Address {
+  id         String    @id @default(cuid())
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  firstName  String
+  lastName   String
+  phone      String?
+  line1      String
+  line2      String?
+  city       String
+  region     String
+  postalCode String?
+  country    String  @default("CL")
+  isDefault  Boolean @default(false)
+
+  shippingOrders Order[] @relation("ShippingAddress")
+  billingOrders  Order[] @relation("BillingAddress")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+}
+
+// ================================================================
+// Coupons
+// ================================================================
+
+model Coupon {
+  id             String     @id @default(cuid())
+  code           String     @unique
+  type           CouponType
+  value          Int
+  minOrderAmount Int?
+  maxUses        Int?
+  usedCount      Int        @default(0)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  active         Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([active])
+}
+
+// ================================================================
+// Store Settings (editable from admin panel)
+// Key/value store for runtime-tunable config.
+// ================================================================
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

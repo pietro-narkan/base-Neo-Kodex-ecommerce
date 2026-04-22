@@ -1,0 +1,20 @@
+{
+  "name": "neo-kodex-ecommerce",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Base ecommerce headless reutilizable — NestJS + Prisma + Next.js",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "pnpm -r exec rm -rf node_modules dist .next .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3"
+  }
+}
