@@ -18,6 +18,7 @@ RUN pnpm install --frozen-lockfile
 
 # ===== build =====
 FROM deps AS build
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 COPY . .
 WORKDIR /app/apps/api
 RUN pnpm exec prisma generate

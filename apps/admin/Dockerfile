@@ -17,6 +17,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NODE_OPTIONS="--max-old-space-size=1024"
 COPY . .
 WORKDIR /app/apps/admin
 ENV NEXT_TELEMETRY_DISABLED=1
