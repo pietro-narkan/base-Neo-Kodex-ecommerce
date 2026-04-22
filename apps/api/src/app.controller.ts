@@ -1,11 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
 
+import { Public } from './auth/decorators/public.decorator';
 import { PrismaService } from './prisma/prisma.service';
 
 @Controller()
 export class AppController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   root() {
     return {
@@ -18,6 +20,7 @@ export class AppController {
     };
   }
 
+  @Public()
   @Get('health')
   async health() {
     let dbOk = false;

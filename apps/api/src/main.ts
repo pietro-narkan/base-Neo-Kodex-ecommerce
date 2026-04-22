@@ -6,6 +6,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 
 import { AppModule } from './app.module';
 
@@ -29,6 +30,13 @@ async function bootstrap() {
 
   await app.register(helmet as any, {
     contentSecurityPolicy: false,
+  });
+
+  await app.register(multipart as any, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10 MB
+      files: 1,
+    },
   });
 
   app.useGlobalPipes(
