@@ -27,3 +27,5 @@ Thumbs.db
 coverage/
 
 .docker-data/
+ssh.png
+ssh-public-key.md
