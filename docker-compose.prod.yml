@@ -1,0 +1,118 @@
+name: neo-kodex
+
+# Production docker-compose (para Coolify "Docker Compose" resource).
+# Para local dev usar docker-compose.yml en la raíz.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neokodex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-neokodex}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neokodex} -d ${POSTGRES_DB:-neokodex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    # Coolify puede exponer los ports 9000 y 9001 con FQDNs auto
+    # (SERVICE_FQDN_MINIO_9000 y SERVICE_FQDN_MINIO_9001)
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-neo-kodex-media}
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}) do echo 'waiting minio...' && sleep 2; done;
+      /usr/bin/mc mb --ignore-existing local/$${MINIO_BUCKET};
+      /usr/bin/mc anonymous set download local/$${MINIO_BUCKET};
+      echo 'minio bucket ready';
+      exit 0;"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-neokodex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neokodex}?schema=public"
+      PORT: 3001
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      REFRESH_SECRET: ${REFRESH_SECRET:?required}
+      REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN:-30d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-neo-kodex-media}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      TAX_RATE_BP: "1900"
+      PAYMENT_PROVIDER: manual
+      EMAIL_PROVIDER: console
+      DTE_PROVIDER: mock
+      SHIPPING_PROVIDER: flat
+    # Coolify expone este service con FQDN auto (sslip.io).
+    # El magic var SERVICE_FQDN_API_3001 lo toma el admin/storefront.
+    ports:
+      - "3001"
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    ports:
+      - "3000"
+
+  storefront:
+    build:
+      context: .
+      dockerfile: apps/storefront/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    ports:
+      - "3002"
+
+volumes:
+  pgdata:
+  miniodata:

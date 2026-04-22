@@ -4,7 +4,9 @@
 // ================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // native = host actual (dev local); linux-musl-openssl-3.0.x = Alpine prod
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

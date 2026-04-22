@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+.git
+.github
+*.log
+**/.env
+**/.env.local
+**/.env.*.local
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+coverage
+.docker-data
