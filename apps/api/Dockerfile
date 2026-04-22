@@ -43,6 +43,20 @@ COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 
 WORKDIR /app/apps/api
 EXPOSE 3001
-# Retry prisma migrate hasta 10x (postgres puede tardar en estar reachable)
-# y usar binario via PATH resuelto
-CMD ["sh", "-c", "i=0; until prisma migrate deploy 2>&1; do i=$((i+1)); if [ $i -ge 10 ]; then echo 'prisma migrate failed after 10 retries'; exit 1; fi; echo \"retry $i/10 in 3s...\"; sleep 3; done && node dist/main.js"]
+# Startup con logs visibles para diagnosticar. Retry prisma, despues exec node.
+CMD ["sh", "-c", "\
+echo '=== API startup ==='; \
+echo 'node:' $(node --version); \
+echo 'prisma binary:' $(which prisma); \
+ls -la /app/node_modules/.bin/prisma 2>&1 | head -3; \
+echo 'DATABASE_URL prefix:' $(echo $DATABASE_URL | cut -c1-40); \
+echo 'PORT:' $PORT; \
+echo '--- migrate attempt ---'; \
+for i in 1 2 3 4 5 6 7 8 9 10; do \
+  echo \"migrate try $i:\"; \
+  prisma migrate deploy 2>&1 && break; \
+  echo '  failed, retry in 3s'; \
+  sleep 3; \
+done; \
+echo '=== starting node ==='; \
+exec node dist/main.js"]
