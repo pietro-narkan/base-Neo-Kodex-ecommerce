@@ -30,7 +30,9 @@ coverage/
 ssh.png
 ssh-public-key.md
 webhook.png
+columnas.jpg
 
 # Sample CSVs (client data, never commit)
 wc-product-export-*.csv
+orders-*.csv
 *.csv
