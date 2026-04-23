@@ -7,6 +7,7 @@ import {
 } from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 
 import { AppModule } from './app.module';
 
@@ -30,6 +31,33 @@ async function bootstrap() {
 
   await app.register(helmet as any, {
     contentSecurityPolicy: false,
+  });
+
+  // Rate limiting with two buckets per IP:
+  //  - auth endpoints (login / forgot / reset): 10 req / 15 min (bruteforce mitigation)
+  //  - everything else: 100 req / minute (generous for normal traffic)
+  // On exceed: 429 with Retry-After header.
+  const AUTH_PATHS = new Set([
+    '/api/auth/admin/login',
+    '/api/auth/customer/login',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password',
+  ]);
+  const isAuthRoute = (url: string): boolean => AUTH_PATHS.has(url);
+
+  await app.register(rateLimit as any, {
+    global: true,
+    max: (req: { url: string }) => (isAuthRoute(req.url) ? 10 : 100),
+    timeWindow: (req: { url: string }) =>
+      isAuthRoute(req.url) ? '15 minutes' : '1 minute',
+    keyGenerator: (req: { ip: string; url: string }) =>
+      isAuthRoute(req.url) ? `${req.ip}:auth` : req.ip,
+    allowList: (req: { url: string }) => req.url === '/api' || req.url === '/api/',
+    errorResponseBuilder: (_req: unknown, ctx: { after: string }) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Demasiados intentos. Volvé a probar en ${ctx.after}.`,
+    }),
   });
 
   await app.register(multipart as any, {
