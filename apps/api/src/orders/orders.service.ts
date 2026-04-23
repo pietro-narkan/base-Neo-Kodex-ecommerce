@@ -432,6 +432,127 @@ export class OrdersService {
     return rows.join('\n');
   }
 
+  // ===== Notes + timeline =====
+
+  async listNotes(orderId: string) {
+    await this.getByIdAdmin(orderId); // 404 if missing
+    return this.prisma.orderNote.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async addNote(
+    orderId: string,
+    input: { content: string; isPublic: boolean },
+    actor: { id: string; email: string },
+  ) {
+    if (!input.content?.trim()) {
+      throw new BadRequestException('El contenido de la nota es obligatorio');
+    }
+    await this.getByIdAdmin(orderId);
+    const note = await this.prisma.orderNote.create({
+      data: {
+        orderId,
+        authorId: actor.id,
+        authorType: 'ADMIN',
+        authorName: actor.email,
+        content: input.content.trim(),
+        isPublic: input.isPublic,
+      },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: input.isPublic ? 'note.create.public' : 'note.create.internal',
+      entityType: 'order',
+      entityId: orderId,
+      metadata: { noteId: note.id },
+    });
+    return note;
+  }
+
+  async removeNote(
+    orderId: string,
+    noteId: string,
+    actor: { id: string; email: string },
+  ) {
+    const note = await this.prisma.orderNote.findUnique({ where: { id: noteId } });
+    if (!note || note.orderId !== orderId) {
+      throw new NotFoundException('Nota no encontrada');
+    }
+    await this.prisma.orderNote.delete({ where: { id: noteId } });
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'note.delete',
+      entityType: 'order',
+      entityId: orderId,
+      before: { content: note.content, isPublic: note.isPublic },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Merge order-specific audit log entries with order notes into a single
+   * chronological timeline. Admin UI renders this in the order detail page.
+   */
+  async getTimeline(orderId: string) {
+    await this.getByIdAdmin(orderId);
+    const [auditEntries, notes] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: { entityType: 'order', entityId: orderId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      this.prisma.orderNote.findMany({
+        where: { orderId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    type TimelineEntry = {
+      id: string;
+      kind: 'audit' | 'note';
+      action: string;
+      actorName: string;
+      createdAt: Date;
+      note?: {
+        content: string;
+        isPublic: boolean;
+        authorType: string;
+      };
+      details?: unknown;
+    };
+    const merged: TimelineEntry[] = [
+      ...auditEntries.map((e) => ({
+        id: `audit:${e.id}`,
+        kind: 'audit' as const,
+        action: e.action,
+        actorName: e.actorEmail,
+        createdAt: e.createdAt,
+        details: {
+          before: e.before,
+          after: e.after,
+          metadata: e.metadata,
+        },
+      })),
+      ...notes.map((n) => ({
+        id: `note:${n.id}`,
+        kind: 'note' as const,
+        action: n.isPublic ? 'note.public' : 'note.internal',
+        actorName: n.authorName,
+        createdAt: n.createdAt,
+        note: {
+          content: n.content,
+          isPublic: n.isPublic,
+          authorType: n.authorType,
+        },
+      })),
+    ];
+    merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return merged;
+  }
+
   async getByIdAdmin(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },

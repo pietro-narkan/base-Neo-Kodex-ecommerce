@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { OrderTimeline } from '@/components/order-timeline';
 import { api, apiDelete, apiGet, apiPatch } from '@/lib/api';
 import { formatCLP, formatDate } from '@/lib/utils';
 
@@ -467,13 +468,15 @@ export default function OrderDetailPage({
       {order.notes && (
         <Card>
           <CardHeader>
-            <CardTitle>Notas</CardTitle>
+            <CardTitle>Notas del cliente (checkout)</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm whitespace-pre-line">{order.notes}</p>
           </CardContent>
         </Card>
       )}
+
+      <OrderTimeline orderId={id} />
     </div>
   );
 }

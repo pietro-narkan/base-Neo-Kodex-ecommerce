@@ -6,6 +6,7 @@ import {
   Header,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -103,6 +104,41 @@ export class AdminOrdersController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.orders.updateAddress(id, dto.kind, dto.address, {
+      id: user.sub,
+      email: user.email,
+    });
+  }
+
+  @Get(':id/timeline')
+  timeline(@Param('id') id: string) {
+    return this.orders.getTimeline(id);
+  }
+
+  @Get(':id/notes')
+  listNotes(@Param('id') id: string) {
+    return this.orders.listNotes(id);
+  }
+
+  @Post(':id/notes')
+  addNote(
+    @Param('id') id: string,
+    @Body() body: { content: string; isPublic?: boolean },
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.orders.addNote(
+      id,
+      { content: body.content, isPublic: Boolean(body.isPublic) },
+      { id: user.sub, email: user.email },
+    );
+  }
+
+  @Delete(':id/notes/:noteId')
+  removeNote(
+    @Param('id') id: string,
+    @Param('noteId') noteId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.orders.removeNote(id, noteId, {
       id: user.sub,
       email: user.email,
     });

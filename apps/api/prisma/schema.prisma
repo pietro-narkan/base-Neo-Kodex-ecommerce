@@ -306,8 +306,9 @@ model Order {
   shippingProvider String?
   trackingNumber   String?
 
-  items OrderItem[]
-  notes String?
+  items       OrderItem[]
+  orderNotes  OrderNote[]
+  notes       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -426,6 +427,33 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ================================================================
+// Order notes (admin-internal or customer-facing)
+// ================================================================
+
+enum OrderNoteAuthorType {
+  ADMIN
+  CUSTOMER
+  SYSTEM
+}
+
+model OrderNote {
+  id         String              @id @default(cuid())
+  orderId    String
+  order      Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId   String?
+  authorType OrderNoteAuthorType
+  authorName String
+  content    String
+  // If true, visible to customer (future: included in emails / customer portal).
+  // If false, only visible in admin panel.
+  isPublic   Boolean             @default(false)
+  createdAt  DateTime            @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
 }
 
 // ================================================================
