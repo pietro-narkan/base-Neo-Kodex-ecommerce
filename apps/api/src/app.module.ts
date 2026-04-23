@@ -17,6 +17,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ImportModule } from './import/import.module';
 import { MediaModule } from './media/media.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { ProvidersModule } from './providers/providers.module';
@@ -51,6 +52,7 @@ import { VariantsModule } from './variants/variants.module';
     CustomersModule,
     DashboardModule,
     ShippingRatesModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

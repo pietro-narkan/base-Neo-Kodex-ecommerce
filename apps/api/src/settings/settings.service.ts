@@ -15,7 +15,8 @@ export const KNOWN_SETTINGS = [
   { key: 'store.tax_rate_bp', label: 'IVA en basis points (1900 = 19%)', type: 'number', group: 'Impuestos' },
   { key: 'store.shipping_flat_rate', label: 'Tarifa plana envío (CLP)', type: 'number', group: 'Envíos' },
   { key: 'store.shipping_free_threshold', label: 'Umbral envío gratis (CLP)', type: 'number', group: 'Envíos' },
-  { key: 'store.bank_details', label: 'Datos bancarios para transferencia', type: 'text', group: 'Pagos' },
+  // store.bank_details se edita en /admin/payments (se mantiene en Setting para
+  // compatibilidad con el ManualPaymentProvider existente).
   { key: 'store.email_from', label: 'Remitente de emails', type: 'email', group: 'Emails' },
   { key: 'trash.product_retention_days', label: 'Días en papelera antes del borrado definitivo (0 = nunca)', type: 'number', group: 'Papelera' },
 ] as const;
