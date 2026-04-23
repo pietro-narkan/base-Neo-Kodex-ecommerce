@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Star, Trash2, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -91,10 +91,19 @@ export default function ProductsListPage() {
             Gestiona el catálogo. Las variantes y media se editan dentro de cada producto.
           </p>
         </div>
-        <Link href="/products/new" className={cn(buttonVariants())}>
-          <Plus className="size-4" />
-          Nuevo producto
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/products/import"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            <Upload className="size-4" />
+            Importar productos
+          </Link>
+          <Link href="/products/new" className={cn(buttonVariants())}>
+            <Plus className="size-4" />
+            Nuevo producto
+          </Link>
+        </div>
       </div>
 
       {error && (
