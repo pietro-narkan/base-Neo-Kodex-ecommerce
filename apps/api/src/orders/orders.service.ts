@@ -256,7 +256,11 @@ export class OrdersService {
 
     // ===== Post-commit hooks =====
     let paymentInstructions: string | undefined;
+    let paymentRedirect:
+      | { url: string; method: 'POST' | 'GET'; params: Record<string, string> }
+      | undefined;
     try {
+      const providerId = await this.payment.getActiveProviderId();
       const paymentResult = await this.payment.init({
         orderId: order.id,
         orderNumber: order.orderNumber,
@@ -266,9 +270,13 @@ export class OrdersService {
         lastName: order.lastName,
       });
       paymentInstructions = paymentResult.instructions;
+      paymentRedirect = paymentResult.redirect;
       await this.prisma.order.update({
         where: { id: order.id },
-        data: { paymentReference: paymentResult.reference },
+        data: {
+          paymentReference: paymentResult.reference,
+          paymentProvider: providerId,
+        },
       });
     } catch (err) {
       this.logger.error(
@@ -295,7 +303,7 @@ export class OrdersService {
       this.logger.warn(`Admin notification falló: ${(err as Error).message}`),
     );
 
-    return { ...order, paymentInstructions };
+    return { ...order, paymentInstructions, paymentRedirect };
   }
 
   async listMine(
@@ -839,7 +847,20 @@ export class OrdersService {
       );
       if (wasPaid && current.paymentReference) {
         try {
-          await this.payment.refund(current.paymentReference);
+          // Usar el provider con el que se pagó la orden original, no el
+          // provider activo actual (el admin puede haber cambiado de pasarela).
+          const providerId =
+            (current.paymentProvider as
+              | 'manual'
+              | 'webpay'
+              | 'mercadopago'
+              | 'flow'
+              | null) ?? undefined;
+          await this.payment.refund(
+            current.paymentReference,
+            current.total,
+            providerId,
+          );
         } catch (err) {
           this.logger.error(
             `Refund falló para orden ${current.orderNumber}: ${(err as Error).message}`,
@@ -848,6 +869,86 @@ export class OrdersService {
       }
     }
     return updated;
+  }
+
+  // ===== Webpay return handling =====
+
+  /**
+   * Llamado desde el controller público que maneja el callback de Webpay.
+   * Busca la orden por el token_ws que guardamos en paymentReference, actualiza
+   * el status según el resultado del commit, y dispara onOrderPaid si es el
+   * primer paso a PAID. Idempotente — si la orden ya está PAID no re-ejecuta
+   * los hooks (importante porque el cliente puede refrescar la return URL).
+   */
+  async confirmWebpayPayment(
+    tokenWs: string,
+    result: {
+      status: 'paid' | 'failed' | 'cancelled';
+      externalReference?: string;
+    },
+  ): Promise<{
+    orderNumber: string | null;
+    state: 'paid' | 'already_paid' | 'failed' | 'not_found';
+  }> {
+    const order = await this.prisma.order.findFirst({
+      where: { paymentReference: tokenWs, paymentProvider: 'webpay' },
+      include: orderInclude,
+    });
+    if (!order) return { orderNumber: null, state: 'not_found' };
+
+    if (order.paymentStatus === 'PAID') {
+      return { orderNumber: order.orderNumber, state: 'already_paid' };
+    }
+
+    if (result.status === 'paid') {
+      const updated = await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentStatus: 'PAID',
+          status: order.status === 'PENDING' ? 'PAID' : order.status,
+          // paymentReference se mantiene como el token_ws original para poder
+          // llamar refund() más tarde. La authorization_code se guarda aparte
+          // si el usuario la necesita (hoy la dejamos solo en audit log).
+        },
+        include: orderInclude,
+      });
+      await this.audit.log({
+        actorEmail: 'system:webpay',
+        action: 'payment.confirmed',
+        entityType: 'order',
+        entityId: order.id,
+        metadata: {
+          authorizationCode: result.externalReference,
+          tokenWs,
+        },
+      });
+      await this.onOrderPaid(updated).catch((err) =>
+        this.logger.warn(
+          `onOrderPaid hooks fallaron para ${order.orderNumber}: ${(err as Error).message}`,
+        ),
+      );
+      return { orderNumber: order.orderNumber, state: 'paid' };
+    }
+
+    // Rechazo del banco — dejamos la orden tal cual (PENDING) para que el
+    // cliente pueda reintentar con otro método si quiere. Solo auditamos.
+    await this.audit.log({
+      actorEmail: 'system:webpay',
+      action: 'payment.rejected',
+      entityType: 'order',
+      entityId: order.id,
+      metadata: { tokenWs },
+    });
+    return { orderNumber: order.orderNumber, state: 'failed' };
+  }
+
+  /** Busca la orden por su id (usado cuando Transbank redirige con TBK_ID_SESION). */
+  async findOrderNumberById(id: string): Promise<string | null> {
+    const row = await this.prisma.order.findUnique({
+      where: { id },
+      select: { orderNumber: true },
+    });
+    return row?.orderNumber ?? null;
   }
 
   // ===== Post-commit hooks =====

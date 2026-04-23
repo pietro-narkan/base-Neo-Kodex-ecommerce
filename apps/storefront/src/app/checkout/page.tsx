@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle2, Loader2, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -65,6 +65,11 @@ interface PlacedOrder {
   discountAmount: number;
   items: OrderItem[];
   paymentInstructions?: string;
+  paymentRedirect?: {
+    url: string;
+    method: 'POST' | 'GET';
+    params: Record<string, string>;
+  };
 }
 
 export default function CheckoutPage() {
@@ -127,6 +132,11 @@ export default function CheckoutPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // ===== Redirect a pasarela externa (Webpay etc.) =====
+  if (placed?.paymentRedirect) {
+    return <GatewayRedirect redirect={placed.paymentRedirect} />;
   }
 
   // ===== Estado de éxito =====
@@ -395,6 +405,49 @@ export default function CheckoutPage() {
             </Button>
           </div>
         </aside>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * Redirige al usuario a una pasarela externa (Webpay, etc.) haciendo
+ * auto-submit de un form con los params requeridos. El form se inicia
+ * oculto y se dispara apenas se monta el componente.
+ */
+function GatewayRedirect({
+  redirect,
+}: {
+  redirect: {
+    url: string;
+    method: 'POST' | 'GET';
+    params: Record<string, string>;
+  };
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    // Un tick para que el form ya esté en el DOM.
+    const t = setTimeout(() => formRef.current?.submit(), 50);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="container mx-auto px-4 py-24 max-w-md text-center">
+      <Loader2 className="animate-spin mx-auto mb-4 size-8 text-muted-foreground" />
+      <h1 className="text-xl font-semibold mb-2">Redirigiendo al pago…</h1>
+      <p className="text-sm text-muted-foreground">
+        Te estamos llevando a la pasarela de pago. Si no sucede
+        automáticamente, tocá el botón.
+      </p>
+      <form ref={formRef} action={redirect.url} method={redirect.method}>
+        {Object.entries(redirect.params).map(([k, v]) => (
+          <input key={k} type="hidden" name={k} value={v} />
+        ))}
+        <button
+          type="submit"
+          className="mt-4 inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Ir a pagar
+        </button>
       </form>
     </div>
   );
