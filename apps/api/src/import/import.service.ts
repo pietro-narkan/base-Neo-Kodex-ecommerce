@@ -7,7 +7,14 @@ import { StorageService } from '../storage/storage.service';
 import { CategoryUpserter } from './category-upserter';
 import type { ImportRowError, ProductImportOptions } from './dto/import-options.dto';
 import { ImageDownloader } from './image-downloader';
-import { parseWooCommerceCsv, type ParsedRow } from './wc-csv-parser';
+import {
+  parseCsv,
+  parseCsvHeaders,
+  suggestMappings,
+  TARGET_FIELDS,
+  type ColumnMappings,
+  type ParsedRow,
+} from './wc-csv-parser';
 
 const DEFAULT_TAX_RATE_BP = 1900;
 const TAX_SETTING_KEY = 'store.tax_rate_bp';
@@ -58,13 +65,29 @@ export class ImportService implements OnModuleInit {
     }
   }
 
+  preview(buffer: Buffer): {
+    headers: string[];
+    firstRow: Record<string, string> | null;
+    suggestedMappings: ColumnMappings;
+    targetFields: typeof TARGET_FIELDS;
+  } {
+    const { headers, firstRow } = parseCsvHeaders(buffer);
+    return {
+      headers,
+      firstRow,
+      suggestedMappings: suggestMappings(headers),
+      targetFields: TARGET_FIELDS,
+    };
+  }
+
   async start(
     buffer: Buffer,
     filename: string,
     options: ProductImportOptions,
+    mappings: ColumnMappings | undefined,
     createdById: string | undefined,
   ): Promise<{ jobId: string; totalRows: number }> {
-    const { rows } = parseWooCommerceCsv(buffer);
+    const { rows } = parseCsv(buffer, mappings);
 
     const job = await this.prisma.importJob.create({
       data: {
@@ -72,7 +95,10 @@ export class ImportService implements OnModuleInit {
         status: 'PENDING',
         filename,
         totalRows: rows.length,
-        options: options as unknown as Prisma.InputJsonValue,
+        options: {
+          ...options,
+          mappings: mappings ?? null,
+        } as unknown as Prisma.InputJsonValue,
         createdById,
       },
     });

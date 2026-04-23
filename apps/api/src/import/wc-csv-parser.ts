@@ -1,6 +1,36 @@
 import { parse } from 'csv-parse/sync';
 
+import { cleanDescription } from './html-cleanup';
+
 export type ProductRowType = 'simple' | 'variable' | 'variation' | 'unknown';
+
+// Canonical target fields the CSV columns can map to.
+// Keys are machine names; labels are shown in the UI dropdown.
+export const TARGET_FIELDS = [
+  { key: 'id', label: 'ID (solo referencia)' },
+  { key: 'type', label: 'Tipo (simple/variable/variation)' },
+  { key: 'sku', label: 'SKU (requerido)' },
+  { key: 'name', label: 'Nombre (requerido)' },
+  { key: 'published', label: 'Publicado' },
+  { key: 'featured', label: 'Destacado' },
+  { key: 'shortDesc', label: 'Descripción corta' },
+  { key: 'description', label: 'Descripción' },
+  { key: 'normalPrice', label: 'Precio normal' },
+  { key: 'salePrice', label: 'Precio rebajado' },
+  { key: 'stock', label: 'Inventario' },
+  { key: 'weightKg', label: 'Peso (kg)' },
+  { key: 'lengthCm', label: 'Longitud (cm)' },
+  { key: 'widthCm', label: 'Anchura (cm)' },
+  { key: 'heightCm', label: 'Altura (cm)' },
+  { key: 'categories', label: 'Categorías' },
+  { key: 'images', label: 'Imágenes' },
+  { key: 'parent', label: 'Producto padre (variaciones)' },
+] as const;
+
+export type TargetFieldKey = (typeof TARGET_FIELDS)[number]['key'];
+
+// Mapping: original CSV header → target field key (or null to skip).
+export type ColumnMappings = Record<string, TargetFieldKey | null>;
 
 export interface ParsedRow {
   rowIndex: number;
@@ -29,9 +59,8 @@ export interface ParseResult {
   headers: string[];
 }
 
-// Map of WooCommerce Spanish headers → canonical keys.
-// Headers are normalized (lowercased, trimmed, spaces collapsed) before lookup.
-const HEADER_ALIASES: Record<string, string> = {
+// WooCommerce Spanish header → target field key (for auto-suggest).
+const WC_ALIASES: Record<string, TargetFieldKey> = {
   id: 'id',
   tipo: 'type',
   sku: 'sku',
@@ -39,13 +68,10 @@ const HEADER_ALIASES: Record<string, string> = {
   publicado: 'published',
   '¿está destacado?': 'featured',
   '¿esta destacado?': 'featured',
-  'visibilidad en el catálogo': 'visibility',
-  'visibilidad en el catalogo': 'visibility',
   'descripción corta': 'shortDesc',
   'descripcion corta': 'shortDesc',
   descripción: 'description',
   descripcion: 'description',
-  '¿existencias?': 'inStock',
   inventario: 'stock',
   'precio rebajado': 'salePrice',
   'precio normal': 'normalPrice',
@@ -100,7 +126,6 @@ function parseType(v: string | undefined): ProductRowType {
   return 'unknown';
 }
 
-// Split WC categories field: "Estar > Baúl, Estar" → [["Estar","Baúl"], ["Estar"]]
 function parseCategories(v: string | undefined): string[][] {
   if (!v) return [];
   return v
@@ -120,14 +145,17 @@ function parseImages(v: string | undefined): string[] {
 
 function parseAttrValues(v: string | undefined): string[] {
   if (!v) return [];
-  // WC separates multi-values with " | " (pipe with spaces)
   return v
     .split('|')
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-export function parseWooCommerceCsv(buffer: Buffer): ParseResult {
+// Parse raw CSV into records. Returns empty arrays for an empty file.
+export function parseCsvHeaders(buffer: Buffer): {
+  headers: string[];
+  firstRow: Record<string, string> | null;
+} {
   const records = parse(buffer, {
     columns: true,
     bom: true,
@@ -136,23 +164,34 @@ export function parseWooCommerceCsv(buffer: Buffer): ParseResult {
     trim: false,
   }) as Record<string, string>[];
 
-  if (records.length === 0) {
-    return { rows: [], headers: [] };
-  }
+  if (records.length === 0) return { headers: [], firstRow: null };
 
-  const originalHeaders = Object.keys(records[0]);
+  return {
+    headers: Object.keys(records[0]),
+    firstRow: records[0],
+  };
+}
 
-  // Build lookup: canonicalKey → original header name
-  const headerMap: Record<string, string> = {};
-  // Attribute columns: idx → { nameHeader?, valueHeader? }
-  const attrCols: Record<number, { nameHeader?: string; valueHeader?: string }> = {};
-
-  for (const h of originalHeaders) {
+// Suggest column mappings based on WooCommerce-style headers.
+// Headers that don't match a known WC alias are left as null (= "No importar").
+export function suggestMappings(headers: string[]): ColumnMappings {
+  const mappings: ColumnMappings = {};
+  for (const h of headers) {
     const norm = normalizeHeader(h);
-    if (HEADER_ALIASES[norm]) {
-      headerMap[HEADER_ALIASES[norm]] = h;
-      continue;
-    }
+    mappings[h] = WC_ALIASES[norm] ?? null;
+  }
+  return mappings;
+}
+
+// Detects WooCommerce attribute columns ("Nombre del atributo N" / "Valor(es) del atributo N")
+// in the original headers. These are handled separately from user mappings because they
+// come in variable-count pairs.
+function detectAttributeColumns(
+  headers: string[],
+): Record<number, { nameHeader?: string; valueHeader?: string }> {
+  const attrCols: Record<number, { nameHeader?: string; valueHeader?: string }> = {};
+  for (const h of headers) {
+    const norm = normalizeHeader(h);
     const nameMatch = ATTR_NAME_RE.exec(norm);
     if (nameMatch) {
       const idx = Number(nameMatch[1]);
@@ -167,9 +206,35 @@ export function parseWooCommerceCsv(buffer: Buffer): ParseResult {
       attrCols[idx].valueHeader = h;
     }
   }
+  return attrCols;
+}
 
-  const get = (rec: Record<string, string>, key: string): string | undefined => {
-    const h = headerMap[key];
+// Main parser. `mappings` tells us which CSV column feeds which target field.
+// If not provided, auto-suggests from WC aliases (keeps backward compat).
+export function parseCsv(buffer: Buffer, mappings?: ColumnMappings): ParseResult {
+  const records = parse(buffer, {
+    columns: true,
+    bom: true,
+    skip_empty_lines: true,
+    relax_column_count: true,
+    trim: false,
+  }) as Record<string, string>[];
+
+  if (records.length === 0) return { rows: [], headers: [] };
+
+  const originalHeaders = Object.keys(records[0]);
+  const effective = mappings ?? suggestMappings(originalHeaders);
+  const attrCols = detectAttributeColumns(originalHeaders);
+
+  // Reverse: target field → original header. If user mapped two columns to the
+  // same target, last one wins (UI should prevent this but be defensive).
+  const fieldToHeader: Partial<Record<TargetFieldKey, string>> = {};
+  for (const [header, field] of Object.entries(effective)) {
+    if (field) fieldToHeader[field] = header;
+  }
+
+  const get = (rec: Record<string, string>, key: TargetFieldKey): string | undefined => {
+    const h = fieldToHeader[key];
     return h ? rec[h] : undefined;
   };
 
@@ -189,12 +254,12 @@ export function parseWooCommerceCsv(buffer: Buffer): ParseResult {
     const weightGrams = weightKg !== null ? Math.round(weightKg * 1000) : null;
 
     return {
-      rowIndex: i + 2, // account for header row; 1-based for the user
+      rowIndex: i + 2,
       type: parseType(get(rec, 'type')),
       sku: (get(rec, 'sku') ?? '').trim(),
       name: (get(rec, 'name') ?? '').trim(),
-      shortDesc: (get(rec, 'shortDesc') ?? '').trim() || null,
-      description: (get(rec, 'description') ?? '').trim() || null,
+      shortDesc: cleanDescription(get(rec, 'shortDesc')),
+      description: cleanDescription(get(rec, 'description')),
       isActive: parseBool(get(rec, 'published')),
       isFeatured: parseBool(get(rec, 'featured')),
       priceNormal: parseIntOrNull(get(rec, 'normalPrice')),
@@ -213,3 +278,6 @@ export function parseWooCommerceCsv(buffer: Buffer): ParseResult {
 
   return { rows, headers: originalHeaders };
 }
+
+/** @deprecated Use parseCsv instead. */
+export const parseWooCommerceCsv = parseCsv;
