@@ -19,7 +19,10 @@ datasource db {
 // ================================================================
 
 enum AdminRole {
-  ADMIN
+  ADMIN            // super admin: full access
+  CATALOG_MANAGER  // products, categories, attributes, media, coupons
+  ORDERS_MANAGER   // orders + customers (read + mutate status/address)
+  VIEWER           // read-only across everything
 }
 
 enum OrderStatus {
@@ -378,6 +381,51 @@ model Coupon {
   updatedAt      DateTime   @updatedAt
 
   @@index([active])
+}
+
+// ================================================================
+// Audit log (who changed what, when — surfaced in admin UI)
+// ================================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  // Admin.id; null if system or actor deleted
+  actorEmail String   // snapshot so entries survive admin deletion
+  action     String   // e.g. "create", "update", "delete", "login", "status.change"
+  entityType String   // e.g. "product", "order", "customer", "admin"
+  entityId   String?
+  // Before/after snapshots for mutations (stored as JSON)
+  before     Json?
+  after      Json?
+  // Extra context (IP, userAgent, notes)
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ================================================================
+// Password reset tokens (admin + customer)
+// ================================================================
+
+enum UserKind {
+  ADMIN
+  CUSTOMER
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userKind  UserKind
+  userId    String   // Admin.id or Customer.id depending on userKind
+  tokenHash String   @unique // bcrypt hash of the raw token (raw is sent by email)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ================================================================

@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthResponse, JwtPayload, UserType } from './types';
 
@@ -16,21 +17,44 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async adminLogin(email: string, password: string): Promise<AuthResponse> {
     const admin = await this.prisma.admin.findUnique({ where: { email } });
     if (!admin || !admin.active) {
+      await this.audit.log({
+        actorEmail: email,
+        action: 'login.failed',
+        entityType: 'admin',
+        metadata: { reason: 'not_found_or_inactive' },
+      });
       throw new UnauthorizedException('Credenciales inválidas');
     }
     const ok = await bcrypt.compare(password, admin.passwordHash);
     if (!ok) {
+      await this.audit.log({
+        actorId: admin.id,
+        actorEmail: admin.email,
+        action: 'login.failed',
+        entityType: 'admin',
+        entityId: admin.id,
+        metadata: { reason: 'bad_password' },
+      });
       throw new UnauthorizedException('Credenciales inválidas');
     }
+    await this.audit.log({
+      actorId: admin.id,
+      actorEmail: admin.email,
+      action: 'login',
+      entityType: 'admin',
+      entityId: admin.id,
+    });
     return this.issueTokens({
       sub: admin.id,
       type: 'admin',
       email: admin.email,
+      role: admin.role,
     });
   }
 
@@ -102,12 +126,14 @@ export class AuthService {
 
   async refresh(sub: string, type: UserType): Promise<AuthResponse> {
     let email: string;
+    let role: import('@prisma/client').AdminRole | undefined;
     if (type === 'admin') {
       const admin = await this.prisma.admin.findUnique({ where: { id: sub } });
       if (!admin || !admin.active) {
         throw new UnauthorizedException();
       }
       email = admin.email;
+      role = admin.role;
     } else {
       const customer = await this.prisma.customer.findUnique({
         where: { id: sub },
@@ -117,7 +143,7 @@ export class AuthService {
       }
       email = customer.email;
     }
-    return this.issueTokens({ sub, type, email });
+    return this.issueTokens({ sub, type, email, role });
   }
 
   private async issueTokens(payload: JwtPayload): Promise<AuthResponse> {

@@ -8,12 +8,20 @@ import {
   CustomerLoginDto,
   CustomerRegisterDto,
 } from './dto/auth.dto';
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/password-reset.dto';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { PasswordResetService } from './password-reset.service';
 import type { JwtPayload } from './types';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @Post('admin/login')
@@ -38,6 +46,18 @@ export class AuthController {
   @Post('refresh')
   refresh(@CurrentUser() user: JwtPayload) {
     return this.auth.refresh(user.sub, user.type);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.passwordReset.requestReset(dto.email, dto.userKind);
+  }
+
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.passwordReset.confirmReset(dto.token, dto.userKind, dto.newPassword);
   }
 
   @Get('me')

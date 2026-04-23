@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 
+import { AdminsModule } from './admins/admins.module';
 import { AppController } from './app.controller';
 import { AttributesModule } from './attributes/attributes.module';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { CartModule } from './cart/cart.module';
@@ -15,6 +17,7 @@ import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { ProvidersModule } from './providers/providers.module';
+import { SettingsModule } from './settings/settings.module';
 import { StorageModule } from './storage/storage.module';
 import { VariantsModule } from './variants/variants.module';
 
@@ -27,7 +30,9 @@ import { VariantsModule } from './variants/variants.module';
     PrismaModule,
     StorageModule,
     ProvidersModule,
+    AuditModule,
     AuthModule,
+    AdminsModule,
     CategoriesModule,
     AttributesModule,
     ProductsModule,
@@ -37,6 +42,7 @@ import { VariantsModule } from './variants/variants.module';
     CartModule,
     OrdersModule,
     ImportModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [
