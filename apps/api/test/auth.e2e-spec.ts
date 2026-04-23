@@ -134,6 +134,42 @@ describe('Auth', () => {
     });
   });
 
+  describe('Password strength policy', () => {
+    it('rejects weak passwords in customer register (zxcvbn)', async () => {
+      const weakPasswords = ['password', '12345678', 'qwerty123', 'aaaaaaaa'];
+      for (const weak of weakPasswords) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/auth/customer/register',
+          payload: {
+            email: `test-weak-${weak.slice(0, 4)}@test.local`,
+            password: weak,
+          },
+        });
+        expect(res.statusCode).toBe(400);
+        const body = res.json() as { message: string | string[] };
+        const message = Array.isArray(body.message) ? body.message.join(' ') : body.message;
+        expect(message.toLowerCase()).toMatch(/débil|debil|weak/);
+      }
+    });
+
+    it('accepts a reasonably strong password', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/customer/register',
+        payload: {
+          email: 'test-strong@test.local',
+          password: 'Tr0ub4dor&3-mueble',
+        },
+      });
+      expect(res.statusCode).toBe(201);
+      // cleanup
+      await prisma.customer.deleteMany({
+        where: { email: 'test-strong@test.local' },
+      });
+    });
+  });
+
   describe('Refresh token endpoint', () => {
     it('rotates tokens when given a valid refresh token', async () => {
       const loginRes = await app.inject({

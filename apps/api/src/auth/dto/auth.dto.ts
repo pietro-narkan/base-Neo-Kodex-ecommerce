@@ -7,6 +7,8 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { IsStrongPassword } from '../../common/password-strength';
+
 export class AdminLoginDto {
   @IsEmail()
   email!: string;
@@ -31,6 +33,7 @@ export class CustomerRegisterDto {
 
   @IsString()
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @IsStrongPassword()
   password!: string;
 
   @IsOptional()

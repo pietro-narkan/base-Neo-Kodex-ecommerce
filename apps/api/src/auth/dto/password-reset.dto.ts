@@ -1,6 +1,8 @@
 import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
 import { UserKind } from '@prisma/client';
 
+import { IsStrongPassword } from '../../common/password-strength';
+
 export class ForgotPasswordDto {
   @IsEmail()
   email!: string;
@@ -18,5 +20,6 @@ export class ResetPasswordDto {
 
   @IsString()
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  @IsStrongPassword()
   newPassword!: string;
 }
