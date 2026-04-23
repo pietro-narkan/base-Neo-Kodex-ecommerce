@@ -7,7 +7,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
-import { IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireRoles } from '../auth/decorators/roles.decorator';
@@ -24,6 +24,22 @@ class UpdateTemplateDto {
   @IsString()
   @MinLength(1)
   html!: string;
+}
+
+class SendTestDto {
+  @IsEmail()
+  to!: string;
+
+  // Opcionales: si vienen, se usan esos drafts (editor sin guardar).
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  html?: string;
 }
 
 @UseGuards(AdminOnlyGuard, RolesGuard)
@@ -65,5 +81,23 @@ export class EmailTemplatesController {
   @Post(':id/preview')
   preview(@Param('id') id: string) {
     return this.service.preview(id);
+  }
+
+  /** Envía un correo de prueba con los mockData del catálogo. */
+  @RequireRoles()
+  @Post(':id/send-test')
+  sendTest(
+    @Param('id') id: string,
+    @Body() dto: SendTestDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.service.sendTest(
+      id,
+      dto.to,
+      dto.subject !== undefined || dto.html !== undefined
+        ? { subject: dto.subject, html: dto.html }
+        : undefined,
+      { id: user.sub, email: user.email },
+    );
   }
 }

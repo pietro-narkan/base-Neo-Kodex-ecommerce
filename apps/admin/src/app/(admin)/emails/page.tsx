@@ -7,6 +7,7 @@ import {
   Mail,
   RotateCcw,
   Save,
+  Send,
   User as UserIcon,
   Users as UsersIcon,
 } from 'lucide-react';
@@ -56,6 +57,9 @@ export default function EmailsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [preview, setPreview] = useState<RenderedPreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [testFormOpen, setTestFormOpen] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
 
   const loadList = useCallback(async () => {
     setError(null);
@@ -87,6 +91,7 @@ export default function EmailsPage() {
     setPreview(null);
     setError(null);
     setNotice(null);
+    setTestFormOpen(false);
   }, [selected?.id, selected?.current.subject, selected?.current.html]);
 
   const isDirty =
@@ -137,6 +142,39 @@ export default function EmailsPage() {
       setError((err as Error).message);
     } finally {
       setResetting(false);
+    }
+  }
+
+  async function handleSendTest() {
+    if (!selected) return;
+    const to = testEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      setError('Ingresá un email válido.');
+      return;
+    }
+    setSendingTest(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api<{ ok: true; provider: string }>(
+        `/admin/email-templates/${encodeURIComponent(selected.id)}/send-test`,
+        {
+          method: 'POST',
+          body: { to, subject: draftSubject, html: draftHtml },
+        },
+      );
+      const providerNote =
+        res.provider === 'console' || res.provider === 'noop'
+          ? ` (proveedor "${res.provider}" — el correo no se envía de verdad, revisá los logs del servidor)`
+          : ` (proveedor "${res.provider}")`;
+      setNotice(`Correo de prueba enviado a ${to}${providerNote}.`);
+      setTimeout(() => setNotice(null), 6000);
+      setTestFormOpen(false);
+      setTestEmail('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSendingTest(false);
     }
   }
 
@@ -328,6 +366,13 @@ export default function EmailsPage() {
                       Previsualizar con datos de ejemplo
                     </Button>
                     <Button
+                      variant="outline"
+                      onClick={() => setTestFormOpen((v) => !v)}
+                    >
+                      <Send className="size-4" />
+                      Enviar correo de prueba
+                    </Button>
+                    <Button
                       variant="ghost"
                       onClick={handleReset}
                       disabled={!selected.isCustomized || resetting}
@@ -346,6 +391,58 @@ export default function EmailsPage() {
                       </span>
                     )}
                   </div>
+
+                  {testFormOpen && (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                      <Label htmlFor="test-email" className="text-sm">
+                        Email de destino
+                      </Label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Input
+                          id="test-email"
+                          type="email"
+                          placeholder="tu@correo.com"
+                          value={testEmail}
+                          autoFocus
+                          onChange={(e) => setTestEmail(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void handleSendTest();
+                            }
+                          }}
+                          className="flex-1"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleSendTest}
+                            disabled={sendingTest || !testEmail.trim()}
+                          >
+                            {sendingTest ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Send className="size-4" />
+                            )}
+                            Enviar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              setTestFormOpen(false);
+                              setTestEmail('');
+                            }}
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Se envía el contenido del editor (incluyendo cambios no
+                        guardados) renderizado con los datos de ejemplo. El
+                        asunto lleva el prefijo [PRUEBA].
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

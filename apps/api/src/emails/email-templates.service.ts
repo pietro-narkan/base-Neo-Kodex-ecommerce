@@ -133,6 +133,45 @@ export class EmailTemplatesService {
   }
 
   /**
+   * Envía un correo de prueba al address indicado, usando los mockData del
+   * catálogo. Si el admin pasa `override` (drafts sin guardar), se usa ese
+   * contenido; si no, cae al override guardado o al default del catálogo.
+   * Devuelve el nombre del proveedor activo para que el UI pueda avisar cuando
+   * el provider es "console"/"noop" y el mail no sale de verdad.
+   */
+  async sendTest(
+    id: string,
+    to: string,
+    override: { subject?: string; html?: string } | undefined,
+    actor: { id: string; email: string },
+  ): Promise<{ ok: true; provider: string }> {
+    const def = findTemplate(id);
+    if (!def) throw new NotFoundException('Template desconocido');
+
+    const stored = await this.loadOverride(id);
+    const subjectTpl =
+      override?.subject ?? stored?.subject ?? def.defaults.subject;
+    const htmlTpl = override?.html ?? stored?.html ?? def.defaults.html;
+
+    const subject = `[PRUEBA] ${renderTemplate(subjectTpl, def.mockData)}`;
+    const html = renderTemplate(htmlTpl, def.mockData);
+    const text = htmlToText(html);
+
+    await this.email.send({ to, subject, html, text });
+
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'email.test_sent',
+      entityType: 'email_template',
+      entityId: id,
+      metadata: { to, provider: this.email.providerName },
+    });
+
+    return { ok: true, provider: this.email.providerName };
+  }
+
+  /**
    * Render usado por el código que manda emails de verdad. Si el admin editó
    * la plantilla en /admin/emails usa ese override; si no, el default del
    * catálogo. Nunca tira — si el id es inválido loggea y devuelve un email
