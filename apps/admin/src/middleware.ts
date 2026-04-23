@@ -5,6 +5,8 @@ export function middleware(request: NextRequest) {
 
   if (
     pathname === '/login' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico'
   ) {

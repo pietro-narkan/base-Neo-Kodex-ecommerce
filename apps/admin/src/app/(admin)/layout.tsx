@@ -1,31 +1,51 @@
 'use client';
 
 import {
+  ClipboardList,
   LayoutDashboard,
   Loader2,
   LogOut,
   Package,
+  Settings,
   ShoppingCart,
   Sliders,
   Tag,
   Ticket,
+  User,
+  Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/lib/auth';
+import { useAuth, type AdminRole } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
-const nav = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+}
+
+const nav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orders', label: 'Órdenes', icon: ShoppingCart },
+  { href: '/customers', label: 'Clientes', icon: User },
   { href: '/products', label: 'Productos', icon: Package },
   { href: '/categories', label: 'Categorías', icon: Tag },
   { href: '/attributes', label: 'Atributos', icon: Sliders },
   { href: '/coupons', label: 'Cupones', icon: Ticket },
+  { href: '/users', label: 'Usuarios admin', icon: Users, adminOnly: true },
+  { href: '/audit-log', label: 'Registro de actividad', icon: ClipboardList, adminOnly: true },
+  { href: '/settings', label: 'Configuración', icon: Settings, adminOnly: true },
 ];
+
+function canSee(item: NavItem, role?: AdminRole): boolean {
+  if (!item.adminOnly) return true;
+  return role === 'ADMIN';
+}
 
 export default function AdminLayout({
   children,
@@ -58,31 +78,44 @@ export default function AdminLayout({
           <div className="text-xs text-muted-foreground">Admin</div>
         </div>
         <nav className="flex-1 space-y-1">
-          {nav.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-                  active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+          {nav
+            .filter((item) => canSee(item, user.role))
+            .map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                    active
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
         </nav>
       </aside>
       <div className="flex flex-col min-w-0">
         <header className="border-b h-14 flex items-center justify-end px-6 gap-4 bg-background">
-          <span className="text-sm text-muted-foreground">{user.email}</span>
+          <Link
+            href="/account"
+            className="text-sm text-muted-foreground hover:text-foreground"
+            title="Cambiar contraseña"
+          >
+            {user.email}
+            {user.role && user.role !== 'ADMIN' && (
+              <span className="ml-2 text-xs bg-muted rounded px-1.5 py-0.5">
+                {user.role}
+              </span>
+            )}
+          </Link>
           <Button
             variant="ghost"
             size="sm"

@@ -10,10 +10,13 @@ import {
 
 import { api, apiPost, clearTokens, setTokens } from './api';
 
+export type AdminRole = 'ADMIN' | 'CATALOG_MANAGER' | 'ORDERS_MANAGER' | 'VIEWER';
+
 export interface AuthUser {
   sub: string;
   type: 'admin' | 'customer';
   email: string;
+  role?: AdminRole;
 }
 
 interface AuthContextValue {
