@@ -37,7 +37,7 @@ export default function TrashPage() {
     setError(null);
     try {
       const res = await apiGet<{ data: Product[]; total: number }>(
-        '/admin/products/trash?limit=200',
+        '/admin/products/trash?limit=100',
       );
       setData(res.data);
       setSelected(new Set());
