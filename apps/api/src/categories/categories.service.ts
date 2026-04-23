@@ -141,6 +141,10 @@ export class CategoriesService {
       if (!parent) {
         throw new BadRequestException('parentId inválido');
       }
+      // Cycle detection: walk up from the proposed parent. If `id` appears
+      // in the ancestor chain, setting parentId to dto.parentId would close
+      // a cycle (e.g. A→B→C, trying to set A.parent=C).
+      await this.assertNoCycle(id, dto.parentId);
     }
 
     return this.prisma.category.update({
@@ -154,6 +158,33 @@ export class CategoriesService {
         active: dto.active,
       },
     });
+  }
+
+  /**
+   * Walks up the parent chain starting from `proposedParentId`. Throws if
+   * `selfId` is encountered, which would mean the update closes a cycle.
+   * Safety cap at 100 hops to prevent infinite loops from pre-existing bad data.
+   */
+  private async assertNoCycle(
+    selfId: string,
+    proposedParentId: string,
+  ): Promise<void> {
+    let cursor: string | null = proposedParentId;
+    let hops = 0;
+    while (cursor && hops < 100) {
+      if (cursor === selfId) {
+        throw new BadRequestException(
+          'Ciclo detectado: la categoría propuesta como padre es descendiente de esta',
+        );
+      }
+      const next: { parentId: string | null } | null =
+        await this.prisma.category.findUnique({
+          where: { id: cursor },
+          select: { parentId: true },
+        });
+      cursor = next?.parentId ?? null;
+      hops += 1;
+    }
   }
 
   async remove(id: string) {

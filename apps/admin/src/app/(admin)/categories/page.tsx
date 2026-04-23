@@ -2,7 +2,7 @@
 
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -21,9 +21,45 @@ interface Category {
   id: string;
   name: string;
   slug: string;
+  parentId: string | null;
   active: boolean;
   order: number;
   createdAt: string;
+}
+
+interface FlatNode extends Category {
+  depth: number;
+}
+
+/** Sort children in display order; depth-first to preserve parent→child rows. */
+function buildTreeRows(categories: Category[]): FlatNode[] {
+  const byParent = new Map<string | null, Category[]>();
+  for (const c of categories) {
+    const k = c.parentId ?? null;
+    const list = byParent.get(k) ?? [];
+    list.push(c);
+    byParent.set(k, list);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }
+  const out: FlatNode[] = [];
+  function walk(parentId: string | null, depth: number): void {
+    const kids = byParent.get(parentId) ?? [];
+    for (const c of kids) {
+      out.push({ ...c, depth });
+      walk(c.id, depth + 1);
+    }
+  }
+  walk(null, 0);
+  // Surface orphans (bad data: parentId referencing non-existent category) at root
+  const ids = new Set(categories.map((c) => c.id));
+  for (const c of categories) {
+    if (c.parentId && !ids.has(c.parentId) && !out.find((r) => r.id === c.id)) {
+      out.push({ ...c, depth: 0 });
+    }
+  }
+  return out;
 }
 
 export default function CategoriesListPage() {
@@ -46,6 +82,8 @@ export default function CategoriesListPage() {
     load();
   }, [load]);
 
+  const rows = useMemo(() => (data ? buildTreeRows(data) : []), [data]);
+
   async function handleDelete(id: string, name: string) {
     if (!window.confirm(`¿Eliminar categoría "${name}"?`)) return;
     try {
@@ -62,7 +100,7 @@ export default function CategoriesListPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Categorías</h1>
           <p className="text-sm text-muted-foreground">
-            Gestiona las categorías del catálogo.
+            Árbol de categorías. Las subcategorías se anidan bajo su categoría padre.
           </p>
         </div>
         <Link href="/categories/new" className={cn(buttonVariants())}>
@@ -81,7 +119,7 @@ export default function CategoriesListPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="animate-spin text-muted-foreground" />
         </div>
-      ) : data.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="text-sm text-muted-foreground py-12 text-center">
           No hay categorías todavía.
         </div>
@@ -98,10 +136,23 @@ export default function CategoriesListPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.map((c) => (
+              {rows.map((c) => (
                 <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="font-medium">
+                    <div className="flex items-center">
+                      {c.depth > 0 && (
+                        <span
+                          className="text-muted-foreground/60 select-none"
+                          style={{ paddingLeft: `${(c.depth - 1) * 16}px` }}
+                          aria-hidden
+                        >
+                          └─{'─'.repeat(Math.max(0, c.depth - 1))}{' '}
+                        </span>
+                      )}
+                      {c.name}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground font-mono text-xs">
                     {c.slug}
                   </TableCell>
                   <TableCell>{c.order}</TableCell>
