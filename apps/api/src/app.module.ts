@@ -9,6 +9,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { CartModule } from './cart/cart.module';
 import { CategoriesModule } from './categories/categories.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { ImportModule } from './import/import.module';
 import { MediaModule } from './media/media.module';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -35,6 +36,7 @@ import { VariantsModule } from './variants/variants.module';
     CouponsModule,
     CartModule,
     OrdersModule,
+    ImportModule,
   ],
   controllers: [AppController],
   providers: [

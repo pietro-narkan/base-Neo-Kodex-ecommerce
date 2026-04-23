@@ -48,6 +48,17 @@ enum CouponType {
   FIXED
 }
 
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ImportType {
+  PRODUCTS
+}
+
 // ================================================================
 // Auth
 // ================================================================
@@ -198,6 +209,8 @@ model Media {
   key       String?
   alt       String?
   position  Int      @default(0)
+  // Original URL (used for idempotent re-imports from CSV)
+  sourceUrl String?
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
   variantId String?
@@ -206,6 +219,7 @@ model Media {
 
   @@index([productId])
   @@index([variantId])
+  @@index([sourceUrl])
 }
 
 // ================================================================
@@ -364,6 +378,35 @@ model Coupon {
   updatedAt      DateTime   @updatedAt
 
   @@index([active])
+}
+
+// ================================================================
+// Bulk import jobs (CSV → products, extensible to other types)
+// ================================================================
+
+model ImportJob {
+  id            String       @id @default(cuid())
+  type          ImportType   @default(PRODUCTS)
+  status        ImportStatus @default(PENDING)
+  filename      String?
+  totalRows     Int          @default(0)
+  processedRows Int          @default(0)
+  successCount  Int          @default(0)
+  updateCount   Int          @default(0)
+  failCount     Int          @default(0)
+  // Array of { row: number, sku?: string, message: string }
+  errors        Json?
+  // Array of { row: number, sku?: string, message: string }
+  warnings      Json?
+  // Options provided at upload time (e.g. { priceIncludesTax: true })
+  options       Json?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ================================================================
