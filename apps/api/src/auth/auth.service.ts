@@ -8,8 +8,8 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
+import { EmailTemplatesService } from '../emails/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../providers/email.service';
 import type { AuthResponse, JwtPayload, UserType } from './types';
 
 @Injectable()
@@ -19,7 +19,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
+    private readonly emailTemplates: EmailTemplatesService,
   ) {}
 
   async adminLogin(email: string, password: string): Promise<AuthResponse> {
@@ -102,31 +102,9 @@ export class AuthService {
     // Welcome email only on fresh account creation (not when upgrading a guest).
     const wasFreshSignup = !existing;
     if (wasFreshSignup) {
-      await this.email
-        .send({
-          to: customer.email,
-          subject: '¡Bienvenido/a a la tienda!',
-          text: [
-            `¡Hola ${customer.firstName ?? ''}!`,
-            '',
-            'Tu cuenta fue creada exitosamente. Ahora podés:',
-            '  • Ver el historial de tus compras',
-            '  • Guardar direcciones de envío',
-            '  • Hacer checkout más rápido',
-            '',
-            'Cualquier duda, respondé este email.',
-          ].join('\n'),
-          html: `
-<h2>¡Bienvenido/a!</h2>
-<p>Hola <strong>${customer.firstName ?? ''}</strong>, tu cuenta fue creada exitosamente.</p>
-<p>Ahora podés:</p>
-<ul>
-  <li>Ver el historial de tus compras</li>
-  <li>Guardar direcciones de envío</li>
-  <li>Hacer checkout más rápido</li>
-</ul>
-<p>Cualquier duda, respondé este email.</p>
-          `.trim(),
+      await this.emailTemplates
+        .renderAndSend('customer.welcome', customer.email, {
+          firstName: customer.firstName ?? '',
         })
         .catch(() => undefined); // best-effort, no romper el registro si el email falla
     }

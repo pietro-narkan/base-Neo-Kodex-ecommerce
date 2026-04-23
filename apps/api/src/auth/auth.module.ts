@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
+import { EmailsModule } from '../emails/emails.module';
 import { ProvidersModule } from '../providers/providers.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -14,6 +15,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [
     PassportModule,
     ProvidersModule,
+    EmailsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

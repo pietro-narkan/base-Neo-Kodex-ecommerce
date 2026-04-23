@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit/audit.service';
+import { EMAIL_TEMPLATE_SETTING_PREFIX } from '../emails/email-templates.catalog';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Schema of known settings, used by the admin UI to render appropriate
@@ -40,7 +41,11 @@ export class SettingsService {
       value: map.get(s.key) ?? null,
     }));
     const unknownItems = rows
-      .filter((r) => !knownKeys.has(r.key as KnownSettingKey))
+      .filter(
+        (r) =>
+          !knownKeys.has(r.key as KnownSettingKey) &&
+          !r.key.startsWith(EMAIL_TEMPLATE_SETTING_PREFIX),
+      )
       .map((r) => ({
         key: r.key,
         label: r.key,

@@ -6,8 +6,8 @@ import type { UserKind } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
+import { EmailTemplatesService } from '../emails/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../providers/email.service';
 
 const TOKEN_TTL_MINUTES = 60;
 
@@ -17,7 +17,7 @@ export class PasswordResetService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly email: EmailService,
+    private readonly emailTemplates: EmailTemplatesService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
   ) {}
@@ -58,14 +58,9 @@ export class PasswordResetService {
     });
 
     const resetUrl = this.buildResetUrl(rawToken, userKind);
-    await this.email.send({
-      to: email,
-      subject: 'Restablecer contraseña — Neo-Kodex',
-      html: `<p>Hola,</p>
-<p>Recibimos una solicitud para restablecer tu contraseña. Hacé clic en el link de abajo para crear una nueva (válido por ${TOKEN_TTL_MINUTES} minutos):</p>
-<p><a href="${resetUrl}">${resetUrl}</a></p>
-<p>Si no solicitaste este cambio, ignorá este email.</p>`,
-      text: `Para restablecer tu contraseña visitá: ${resetUrl}\n(Válido por ${TOKEN_TTL_MINUTES} minutos. Ignorá este mensaje si no lo solicitaste.)`,
+    await this.emailTemplates.renderAndSend('password.reset', email, {
+      resetUrl,
+      ttlMinutes: String(TOKEN_TTL_MINUTES),
     });
 
     await this.audit.log({

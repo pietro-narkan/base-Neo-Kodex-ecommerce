@@ -9,10 +9,10 @@ import type { DocumentType, OrderStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { effectivePriceGross, effectivePriceNet } from '../common/pricing';
 import { CouponsService } from '../coupons/coupons.service';
+import { EmailTemplatesService } from '../emails/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DteService } from '../providers/dte.service';
 import type { DocumentTypeLiteral } from '../providers/dte.service';
-import { EmailService } from '../providers/email.service';
 import { PaymentService } from '../providers/payment.service';
 import { ShippingService } from '../providers/shipping.service';
 import type { AddressDto, CheckoutDto } from './dto/orders.dto';
@@ -66,7 +66,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly coupons: CouponsService,
     private readonly payment: PaymentService,
-    private readonly email: EmailService,
+    private readonly emailTemplates: EmailTemplatesService,
     private readonly dte: DteService,
     private readonly shipping: ShippingService,
     private readonly audit: AuditService,
@@ -277,11 +277,17 @@ export class OrdersService {
     }
 
     // Email "orden recibida" con instrucciones de pago (best-effort, no tira errores)
-    await this.email.send({
-      to: order.email,
-      subject: `Orden recibida — ${order.orderNumber}`,
-      text: this.buildOrderCreatedText(order, paymentInstructions),
-      html: this.buildOrderCreatedHtml(order, paymentInstructions),
+    await this.emailTemplates.renderAndSend('order.created', order.email, {
+      firstName: order.firstName,
+      orderNumber: order.orderNumber,
+      itemsHtml: this.itemsHtml(order),
+      subtotal: formatCLP(order.subtotalGross),
+      discount: formatCLP(order.discountAmount),
+      shipping: formatCLP(order.shippingAmount),
+      total: formatCLP(order.total),
+      paymentInstructionsBlock: paymentInstructions
+        ? `<h3>Instrucciones de pago</h3><pre style="background:#f5f5f5;padding:12px;border-radius:4px;white-space:pre-wrap;">${paymentInstructions}</pre>`
+        : '',
     });
 
     // Admin notification (best-effort, skippea si no hay store.contact_email seteado)
@@ -848,11 +854,11 @@ export class OrdersService {
 
   private async onOrderPaid(order: OrderWithRelations): Promise<void> {
     // Email de confirmación
-    await this.email.send({
-      to: order.email,
-      subject: `Pago confirmado — ${order.orderNumber}`,
-      text: this.buildOrderPaidText(order),
-      html: this.buildOrderPaidHtml(order),
+    await this.emailTemplates.renderAndSend('order.paid', order.email, {
+      firstName: order.firstName,
+      orderNumber: order.orderNumber,
+      itemsHtml: this.itemsHtml(order),
+      total: formatCLP(order.total),
     });
 
     // Emisión de DTE si corresponde
@@ -892,15 +898,6 @@ export class OrdersService {
 
   // ===== Email templates =====
 
-  private itemsText(order: OrderWithRelations): string {
-    return order.items
-      .map(
-        (i) =>
-          `  - ${i.productName}${i.variantName ? ` (${i.variantName})` : ''} x ${i.quantity}  →  $${formatCLP(i.subtotal)}`,
-      )
-      .join('\n');
-  }
-
   private itemsHtml(order: OrderWithRelations): string {
     return order.items
       .map(
@@ -910,159 +907,36 @@ export class OrdersService {
       .join('');
   }
 
-  private buildOrderCreatedText(
-    order: OrderWithRelations,
-    paymentInstructions?: string,
-  ): string {
-    return [
-      `¡Hola ${order.firstName}! Recibimos tu orden ${order.orderNumber}.`,
-      '',
-      'Resumen:',
-      this.itemsText(order),
-      '',
-      `Subtotal:  $${formatCLP(order.subtotalGross)}`,
-      `Descuento: -$${formatCLP(order.discountAmount)}`,
-      `Envío:     $${formatCLP(order.shippingAmount)}`,
-      `Total:     $${formatCLP(order.total)}`,
-      '',
-      paymentInstructions
-        ? `Instrucciones de pago:\n${paymentInstructions}`
-        : '',
-      '',
-      'Te avisaremos cuando confirmemos el pago.',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-
-  private buildOrderCreatedHtml(
-    order: OrderWithRelations,
-    paymentInstructions?: string,
-  ): string {
-    const instructionsBlock = paymentInstructions
-      ? `<h3>Instrucciones de pago</h3><pre style="background:#f5f5f5;padding:12px;border-radius:4px;white-space:pre-wrap;">${paymentInstructions}</pre>`
-      : '';
-    return `
-<h2>¡Gracias por tu compra!</h2>
-<p>Hola <strong>${order.firstName}</strong>, recibimos tu orden <strong>${order.orderNumber}</strong>.</p>
-<ul>${this.itemsHtml(order)}</ul>
-<table>
-  <tr><td>Subtotal</td><td style="text-align:right">$${formatCLP(order.subtotalGross)}</td></tr>
-  <tr><td>Descuento</td><td style="text-align:right">-$${formatCLP(order.discountAmount)}</td></tr>
-  <tr><td>Envío</td><td style="text-align:right">$${formatCLP(order.shippingAmount)}</td></tr>
-  <tr><td><strong>Total</strong></td><td style="text-align:right"><strong>$${formatCLP(order.total)}</strong></td></tr>
-</table>
-${instructionsBlock}
-<p>Te avisaremos cuando confirmemos el pago.</p>
-    `.trim();
-  }
-
-  private buildOrderPaidText(order: OrderWithRelations): string {
-    return [
-      `¡Hola ${order.firstName}! Confirmamos el pago de tu orden ${order.orderNumber}.`,
-      '',
-      'Resumen:',
-      this.itemsText(order),
-      '',
-      `Total pagado: $${formatCLP(order.total)}`,
-      '',
-      'Estamos preparando tu envío.',
-    ].join('\n');
-  }
-
-  private buildOrderPaidHtml(order: OrderWithRelations): string {
-    return `
-<h2>¡Pago confirmado!</h2>
-<p>Hola <strong>${order.firstName}</strong>, confirmamos el pago de tu orden <strong>${order.orderNumber}</strong>.</p>
-<ul>${this.itemsHtml(order)}</ul>
-<p><strong>Total pagado: $${formatCLP(order.total)}</strong></p>
-<p>Estamos preparando tu envío.</p>
-    `.trim();
-  }
-
   private async sendOrderFulfilledEmail(order: OrderWithRelations): Promise<void> {
     const trackingBlock = order.trackingNumber
-      ? `Código de seguimiento: ${order.trackingNumber}${order.shippingProvider ? ` (${order.shippingProvider})` : ''}`
-      : '';
-    const trackingHtml = order.trackingNumber
       ? `<p><strong>Código de seguimiento:</strong> ${order.trackingNumber}${order.shippingProvider ? ` <em>(${order.shippingProvider})</em>` : ''}</p>`
       : '';
-    await this.email.send({
-      to: order.email,
-      subject: `Tu pedido fue despachado — ${order.orderNumber}`,
-      text: [
-        `¡Hola ${order.firstName}! Despachamos tu orden ${order.orderNumber}.`,
-        '',
-        'Items enviados:',
-        this.itemsText(order),
-        '',
-        trackingBlock,
-        '',
-        'Gracias por tu compra.',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-      html: `
-<h2>Tu pedido está en camino 🚚</h2>
-<p>Hola <strong>${order.firstName}</strong>, despachamos tu orden <strong>${order.orderNumber}</strong>.</p>
-<ul>${this.itemsHtml(order)}</ul>
-${trackingHtml}
-<p>Gracias por tu compra.</p>
-      `.trim(),
+    await this.emailTemplates.renderAndSend('order.fulfilled', order.email, {
+      firstName: order.firstName,
+      orderNumber: order.orderNumber,
+      itemsHtml: this.itemsHtml(order),
+      trackingBlock,
     });
   }
 
   private async sendOrderCancelledEmail(order: OrderWithRelations): Promise<void> {
-    await this.email.send({
-      to: order.email,
-      subject: `Orden cancelada — ${order.orderNumber}`,
-      text: [
-        `Hola ${order.firstName},`,
-        '',
-        `Tu orden ${order.orderNumber} fue cancelada.`,
-        '',
-        'Items:',
-        this.itemsText(order),
-        '',
-        `Total: $${formatCLP(order.total)}`,
-        '',
+    await this.emailTemplates.renderAndSend('order.cancelled', order.email, {
+      firstName: order.firstName,
+      orderNumber: order.orderNumber,
+      itemsHtml: this.itemsHtml(order),
+      total: formatCLP(order.total),
+      refundNotice:
         order.paymentStatus === 'PAID'
           ? 'Si ya habías pagado, procesaremos el reembolso en las próximas 72 horas hábiles.'
           : 'Si tenés dudas, respondé este email.',
-      ].join('\n'),
-      html: `
-<h2>Orden cancelada</h2>
-<p>Hola <strong>${order.firstName}</strong>, tu orden <strong>${order.orderNumber}</strong> fue cancelada.</p>
-<ul>${this.itemsHtml(order)}</ul>
-<p><strong>Total:</strong> $${formatCLP(order.total)}</p>
-<p>${
-        order.paymentStatus === 'PAID'
-          ? 'Si ya habías pagado, procesaremos el reembolso en las próximas 72 horas hábiles.'
-          : 'Si tenés dudas, respondé este email.'
-      }</p>
-      `.trim(),
     });
   }
 
   private async sendOrderRefundedEmail(order: OrderWithRelations): Promise<void> {
-    await this.email.send({
-      to: order.email,
-      subject: `Reembolso procesado — ${order.orderNumber}`,
-      text: [
-        `Hola ${order.firstName},`,
-        '',
-        `Procesamos el reembolso de tu orden ${order.orderNumber}.`,
-        '',
-        `Monto reembolsado: $${formatCLP(order.total)}`,
-        '',
-        'El dinero puede tardar entre 3 y 10 días hábiles en aparecer en tu medio de pago.',
-      ].join('\n'),
-      html: `
-<h2>Reembolso procesado</h2>
-<p>Hola <strong>${order.firstName}</strong>, procesamos el reembolso de tu orden <strong>${order.orderNumber}</strong>.</p>
-<p><strong>Monto reembolsado:</strong> $${formatCLP(order.total)}</p>
-<p>El dinero puede tardar entre 3 y 10 días hábiles en aparecer en tu medio de pago.</p>
-      `.trim(),
+    await this.emailTemplates.renderAndSend('order.refunded', order.email, {
+      firstName: order.firstName,
+      orderNumber: order.orderNumber,
+      total: formatCLP(order.total),
     });
   }
 
@@ -1081,36 +955,17 @@ ${trackingHtml}
   private async sendAdminNewOrderEmail(order: OrderWithRelations): Promise<void> {
     const to = await this.getAdminNotificationEmail();
     if (!to) return; // admin email not configured, skip silently
-    await this.email.send({
-      to,
-      subject: `[Admin] Nueva orden ${order.orderNumber} — $${formatCLP(order.total)}`,
-      text: [
-        `Nueva orden ${order.orderNumber} recibida.`,
-        '',
-        `Cliente: ${order.firstName} ${order.lastName} (${order.email})`,
-        `Teléfono: ${order.phone ?? '—'}`,
-        '',
-        'Items:',
-        this.itemsText(order),
-        '',
-        `Subtotal: $${formatCLP(order.subtotalGross)}`,
-        `Envío:    $${formatCLP(order.shippingAmount)}`,
-        `Total:    $${formatCLP(order.total)}`,
-        `Estado de pago: ${order.paymentStatus}`,
-      ].join('\n'),
-      html: `
-<h2>Nueva orden recibida</h2>
-<p><strong>${order.orderNumber}</strong> — <strong>$${formatCLP(order.total)}</strong></p>
-<p>Cliente: <strong>${order.firstName} ${order.lastName}</strong> (${order.email})<br>
-Teléfono: ${order.phone ?? '—'}</p>
-<ul>${this.itemsHtml(order)}</ul>
-<table>
-  <tr><td>Subtotal</td><td>$${formatCLP(order.subtotalGross)}</td></tr>
-  <tr><td>Envío</td><td>$${formatCLP(order.shippingAmount)}</td></tr>
-  <tr><td><strong>Total</strong></td><td><strong>$${formatCLP(order.total)}</strong></td></tr>
-</table>
-<p>Pago: <strong>${order.paymentStatus}</strong></p>
-      `.trim(),
+    await this.emailTemplates.renderAndSend('order.admin_new', to, {
+      orderNumber: order.orderNumber,
+      firstName: order.firstName,
+      lastName: order.lastName,
+      email: order.email,
+      phone: order.phone ?? '—',
+      itemsHtml: this.itemsHtml(order),
+      subtotal: formatCLP(order.subtotalGross),
+      shipping: formatCLP(order.shippingAmount),
+      total: formatCLP(order.total),
+      paymentStatus: order.paymentStatus,
     });
   }
 
