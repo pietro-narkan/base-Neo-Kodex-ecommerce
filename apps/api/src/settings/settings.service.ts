@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { ANALYTICS_SETTING_PREFIX } from '../analytics/analytics.catalog';
 import { AuditService } from '../audit/audit.service';
 import { EMAIL_TEMPLATE_SETTING_PREFIX } from '../emails/email-templates.catalog';
 import { PrismaService } from '../prisma/prisma.service';
@@ -44,7 +45,8 @@ export class SettingsService {
       .filter(
         (r) =>
           !knownKeys.has(r.key as KnownSettingKey) &&
-          !r.key.startsWith(EMAIL_TEMPLATE_SETTING_PREFIX),
+          !r.key.startsWith(EMAIL_TEMPLATE_SETTING_PREFIX) &&
+          !r.key.startsWith(ANALYTICS_SETTING_PREFIX),
       )
       .map((r) => ({
         key: r.key,

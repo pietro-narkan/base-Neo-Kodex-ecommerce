@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  BarChart3,
   ClipboardList,
   CreditCard,
   LayoutDashboard,
@@ -44,6 +45,7 @@ const nav: NavItem[] = [
   { href: '/payments', label: 'Pagos', icon: CreditCard, adminOnly: true },
   { href: '/shipping', label: 'Envíos', icon: Truck, adminOnly: true },
   { href: '/seo', label: 'SEO', icon: Search, adminOnly: true },
+  { href: '/analytics', label: 'Analítica', icon: BarChart3, adminOnly: true },
   { href: '/emails', label: 'Correos', icon: Mail, adminOnly: true },
   { href: '/users', label: 'Usuarios admin', icon: Users, adminOnly: true },
   { href: '/audit-log', label: 'Registro de actividad', icon: ClipboardList, adminOnly: true },

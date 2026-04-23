@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { Footer } from '@/components/layout/footer';
 import { Header } from '@/components/layout/header';
+import { getAnalyticsSnippets } from '@/lib/analytics';
 import { AuthProvider } from '@/lib/auth';
 import { CartProvider } from '@/lib/cart';
 import { getSiteName, getSiteUrl } from '@/lib/seo';
@@ -47,14 +48,37 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const analytics = await getAnalyticsSnippets();
+
   return (
     <html lang="es">
       <body>
+        {/*
+          Scripts de analytics inyectados server-side. Como el HTML llega al
+          browser como parte de la respuesta inicial, el parser sí ejecuta los
+          <script> que contiene (no aplica la restricción de innerHTML).
+          Los "head" van primero para que los trackers se carguen cuanto antes;
+          los "body" (noscript de GTM/Meta) van después como fallback sin JS.
+        */}
+        {analytics.head.map((html, i) => (
+          <div
+            key={`analytics-head-${i}`}
+            data-analytics="head"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        ))}
+        {analytics.body.map((html, i) => (
+          <div
+            key={`analytics-body-${i}`}
+            data-analytics="body"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        ))}
         <AuthProvider>
           <CartProvider>
             <div className="flex flex-col min-h-screen">

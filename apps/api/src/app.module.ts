@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { AdminsModule } from './admins/admins.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AppController } from './app.controller';
 import { AttributesModule } from './attributes/attributes.module';
 import { AuditModule } from './audit/audit.module';
@@ -52,6 +53,7 @@ import { VariantsModule } from './variants/variants.module';
     ImportModule,
     SettingsModule,
     EmailsModule,
+    AnalyticsModule,
     CustomersModule,
     DashboardModule,
     ShippingRatesModule,
