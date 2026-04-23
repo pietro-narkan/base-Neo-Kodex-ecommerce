@@ -318,13 +318,37 @@ export class OrdersService {
 
   async listAdmin(
     pagination: { page?: number; limit?: number },
-    filters: { status?: OrderStatus },
+    filters: {
+      status?: OrderStatus;
+      q?: string;
+      from?: Date;
+      to?: Date;
+    },
   ) {
     const page = pagination.page ?? 1;
     const limit = pagination.limit ?? 20;
-    const where: Prisma.OrderWhereInput = filters.status
-      ? { status: filters.status }
-      : {};
+    const where: Prisma.OrderWhereInput = {
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.q
+        ? {
+            OR: [
+              { orderNumber: { contains: filters.q, mode: 'insensitive' } },
+              { email: { contains: filters.q, mode: 'insensitive' } },
+              { firstName: { contains: filters.q, mode: 'insensitive' } },
+              { lastName: { contains: filters.q, mode: 'insensitive' } },
+              { phone: { contains: filters.q } },
+            ],
+          }
+        : {}),
+      ...(filters.from || filters.to
+        ? {
+            createdAt: {
+              ...(filters.from ? { gte: filters.from } : {}),
+              ...(filters.to ? { lte: filters.to } : {}),
+            },
+          }
+        : {}),
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.order.findMany({
         where,
@@ -342,6 +366,63 @@ export class OrdersService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  /** Streams all matching orders for CSV export. Caps at 5000 rows hard. */
+  async exportAdmin(filters: {
+    status?: OrderStatus;
+    q?: string;
+    from?: Date;
+    to?: Date;
+  }): Promise<string> {
+    const all = await this.listAdmin({ page: 1, limit: 5000 }, filters);
+    const escape = (v: unknown): string => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = [
+      'orderNumber',
+      'createdAt',
+      'status',
+      'paymentStatus',
+      'paymentProvider',
+      'customerEmail',
+      'customerName',
+      'phone',
+      'subtotalGross',
+      'shippingAmount',
+      'discountAmount',
+      'total',
+      'couponCode',
+      'items',
+    ];
+    const rows = [header.join(',')];
+    for (const o of all.data) {
+      const itemsDesc = (o.items ?? [])
+        .map((i) => `${i.quantity}x ${i.productName} [${i.sku}]`)
+        .join(' | ');
+      rows.push(
+        [
+          o.orderNumber,
+          o.createdAt.toISOString(),
+          o.status,
+          o.paymentStatus,
+          o.paymentProvider ?? '',
+          o.email,
+          `${o.firstName} ${o.lastName}`,
+          o.phone ?? '',
+          o.subtotalGross,
+          o.shippingAmount,
+          o.discountAmount,
+          o.total,
+          o.couponCode ?? '',
+          itemsDesc,
+        ]
+          .map(escape)
+          .join(','),
+      );
+    }
+    return rows.join('\n');
   }
 
   async getByIdAdmin(id: string) {

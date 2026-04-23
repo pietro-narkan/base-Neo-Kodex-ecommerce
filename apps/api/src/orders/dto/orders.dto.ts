@@ -142,4 +142,16 @@ export class AdminOrderListQueryDto {
   @IsOptional()
   @IsEnum(OrderStatusDto)
   status?: OrderStatusDto;
+
+  @IsOptional()
+  @IsString()
+  q?: string;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
 }
