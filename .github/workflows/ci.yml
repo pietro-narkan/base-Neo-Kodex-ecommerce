@@ -55,5 +55,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @neo-kodex/api prisma:generate
       - run: pnpm --filter @neo-kodex/api prisma:deploy
       - run: pnpm --filter @neo-kodex/api test
