@@ -162,10 +162,17 @@ model Variant {
   product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   sku            String  @unique
   name           String?
-  // Prices in CLP as whole integer units (no decimals)
+  // Prices in CLP as whole integer units (no decimals).
+  // priceGross = regular price. compareAtPrice = strikethrough "before" price.
+  // Sale prices below are optional and activate only between saleStartAt..saleEndAt
+  // (if dates are null, sale is always active once set).
   priceNet       Int
   priceGross     Int
   compareAtPrice Int?
+  salePriceNet   Int?
+  salePriceGross Int?
+  saleStartAt    DateTime?
+  saleEndAt      DateTime?
   stock          Int     @default(0)
   // Logistics (standard ecommerce, optional)
   weightGrams    Int?

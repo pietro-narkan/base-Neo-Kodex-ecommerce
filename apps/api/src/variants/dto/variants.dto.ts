@@ -3,6 +3,7 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -29,6 +30,20 @@ export class CreateVariantDto {
   @Min(0)
   @Type(() => Number)
   compareAtPrice?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  salePriceNet?: number;
+
+  @IsOptional()
+  @IsDateString()
+  saleStartAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  saleEndAt?: string;
 
   @IsOptional()
   @IsInt()
@@ -91,6 +106,20 @@ export class UpdateVariantDto {
   @Min(0)
   @Type(() => Number)
   compareAtPrice?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  salePriceNet?: number;
+
+  @IsOptional()
+  @IsDateString()
+  saleStartAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  saleEndAt?: string;
 
   @IsOptional()
   @IsInt()

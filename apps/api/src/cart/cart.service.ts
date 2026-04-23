@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { effectivePriceGross, effectivePriceNet } from '../common/pricing';
 import { CouponsService } from '../coupons/coupons.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -178,8 +179,9 @@ export class CartService {
 
   async applyCoupon(identity: CartIdentity, code: string) {
     const cart = await this.resolveCart(identity, false);
+    const now = new Date();
     const subtotalGross = cart.items.reduce(
-      (sum, i) => sum + i.variant.priceGross * i.quantity,
+      (sum, i) => sum + effectivePriceGross(i.variant, now) * i.quantity,
       0,
     );
     await this.coupons.validateAndCalculate(code, subtotalGross);
@@ -267,12 +269,13 @@ export class CartService {
   }
 
   private async withTotals(cart: CartWithItems) {
+    const now = new Date();
     const subtotalGross = cart.items.reduce(
-      (sum, i) => sum + i.variant.priceGross * i.quantity,
+      (sum, i) => sum + effectivePriceGross(i.variant, now) * i.quantity,
       0,
     );
     const subtotalNet = cart.items.reduce(
-      (sum, i) => sum + i.variant.priceNet * i.quantity,
+      (sum, i) => sum + effectivePriceNet(i.variant, now) * i.quantity,
       0,
     );
     const taxAmount = subtotalGross - subtotalNet;

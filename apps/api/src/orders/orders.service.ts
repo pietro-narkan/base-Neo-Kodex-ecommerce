@@ -7,6 +7,7 @@ import {
 import type { DocumentType, OrderStatus, Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit/audit.service';
+import { effectivePriceGross, effectivePriceNet } from '../common/pricing';
 import { CouponsService } from '../coupons/coupons.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DteService } from '../providers/dte.service';
@@ -82,8 +83,9 @@ export class OrdersService {
     }
 
     // Cálculo del envío ANTES de la transacción (no bloquea DB en una llamada externa).
+    const now = new Date();
     const subtotalGrossPreview = cart.items.reduce(
-      (s, i) => s + i.variant.priceGross * i.quantity,
+      (s, i) => s + effectivePriceGross(i.variant, now) * i.quantity,
       0,
     );
     const shippingQuotes = await this.shipping.quote({
@@ -115,11 +117,11 @@ export class OrdersService {
       }
 
       const subtotalNet = cart.items.reduce(
-        (s, i) => s + i.variant.priceNet * i.quantity,
+        (s, i) => s + effectivePriceNet(i.variant, now) * i.quantity,
         0,
       );
       const subtotalGross = cart.items.reduce(
-        (s, i) => s + i.variant.priceGross * i.quantity,
+        (s, i) => s + effectivePriceGross(i.variant, now) * i.quantity,
         0,
       );
       const taxAmount = subtotalGross - subtotalNet;
@@ -220,17 +222,21 @@ export class OrdersService {
           shippingProvider: shippingQuotes[0]?.code ?? null,
           notes: params.dto.notes,
           items: {
-            create: cart.items.map((i) => ({
-              variantId: i.variantId,
-              productName: i.variant.product.name,
-              variantName: i.variant.name,
-              sku: i.variant.sku,
-              priceNet: i.variant.priceNet,
-              priceGross: i.variant.priceGross,
-              taxAmount: i.variant.priceGross - i.variant.priceNet,
-              quantity: i.quantity,
-              subtotal: i.variant.priceGross * i.quantity,
-            })),
+            create: cart.items.map((i) => {
+              const net = effectivePriceNet(i.variant, now);
+              const gross = effectivePriceGross(i.variant, now);
+              return {
+                variantId: i.variantId,
+                productName: i.variant.product.name,
+                variantName: i.variant.name,
+                sku: i.variant.sku,
+                priceNet: net,
+                priceGross: gross,
+                taxAmount: gross - net,
+                quantity: i.quantity,
+                subtotal: gross * i.quantity,
+              };
+            }),
           },
         },
         include: orderInclude,

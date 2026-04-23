@@ -71,6 +71,10 @@ export class VariantsService {
 
     const taxRateBp = await this.getTaxRateBp();
     const priceGross = netToGross(dto.priceNet, taxRateBp);
+    const salePriceGross =
+      dto.salePriceNet !== undefined
+        ? netToGross(dto.salePriceNet, taxRateBp)
+        : null;
 
     return this.prisma.variant.create({
       data: {
@@ -80,6 +84,10 @@ export class VariantsService {
         priceNet: dto.priceNet,
         priceGross,
         compareAtPrice: dto.compareAtPrice,
+        salePriceNet: dto.salePriceNet ?? null,
+        salePriceGross,
+        saleStartAt: dto.saleStartAt ? new Date(dto.saleStartAt) : null,
+        saleEndAt: dto.saleEndAt ? new Date(dto.saleEndAt) : null,
         stock: dto.stock ?? 0,
         weightGrams: dto.weightGrams,
         lengthCm: dto.lengthCm,
@@ -128,9 +136,18 @@ export class VariantsService {
     }
 
     let priceGross: number | undefined;
-    if (dto.priceNet !== undefined) {
+    let salePriceGross: number | null | undefined;
+    if (dto.priceNet !== undefined || dto.salePriceNet !== undefined) {
       const taxRateBp = await this.getTaxRateBp();
-      priceGross = netToGross(dto.priceNet, taxRateBp);
+      if (dto.priceNet !== undefined) {
+        priceGross = netToGross(dto.priceNet, taxRateBp);
+      }
+      if (dto.salePriceNet !== undefined) {
+        salePriceGross =
+          dto.salePriceNet === null
+            ? null
+            : netToGross(dto.salePriceNet, taxRateBp);
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -154,6 +171,10 @@ export class VariantsService {
           priceNet: dto.priceNet,
           priceGross,
           compareAtPrice: dto.compareAtPrice,
+          salePriceNet: dto.salePriceNet,
+          salePriceGross,
+          saleStartAt: dto.saleStartAt ? new Date(dto.saleStartAt) : dto.saleStartAt === null ? null : undefined,
+          saleEndAt: dto.saleEndAt ? new Date(dto.saleEndAt) : dto.saleEndAt === null ? null : undefined,
           stock: dto.stock,
           weightGrams: dto.weightGrams,
           lengthCm: dto.lengthCm,

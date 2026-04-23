@@ -20,6 +20,9 @@ const schema = z.object({
   name: z.string().optional(),
   priceNet: z.coerce.number().int().min(0),
   compareAtPrice: z.coerce.number().int().min(0).optional(),
+  salePriceNet: z.coerce.number().int().min(0).optional(),
+  saleStartAt: z.string().optional(),
+  saleEndAt: z.string().optional(),
   stock: z.coerce.number().int().min(0),
   weightGrams: z.coerce.number().int().min(0).optional(),
   lengthCm: z.coerce.number().int().min(0).optional(),
@@ -50,6 +53,9 @@ export interface Variant {
   name: string | null;
   priceNet: number;
   compareAtPrice: number | null;
+  salePriceNet: number | null;
+  saleStartAt: string | null;
+  saleEndAt: string | null;
   stock: number;
   weightGrams: number | null;
   lengthCm: number | null;
@@ -89,6 +95,11 @@ export function VariantForm({ productId, initial }: Props) {
           name: initial.name ?? '',
           priceNet: initial.priceNet,
           compareAtPrice: initial.compareAtPrice ?? undefined,
+          salePriceNet: initial.salePriceNet ?? undefined,
+          saleStartAt: initial.saleStartAt
+            ? initial.saleStartAt.slice(0, 16) // datetime-local format
+            : '',
+          saleEndAt: initial.saleEndAt ? initial.saleEndAt.slice(0, 16) : '',
           stock: initial.stock,
           weightGrams: initial.weightGrams ?? undefined,
           lengthCm: initial.lengthCm ?? undefined,
@@ -116,6 +127,13 @@ export function VariantForm({ productId, initial }: Props) {
         name: data.name?.trim() || undefined,
         priceNet: data.priceNet,
         compareAtPrice: data.compareAtPrice || undefined,
+        salePriceNet: data.salePriceNet || undefined,
+        saleStartAt: data.saleStartAt?.trim()
+          ? new Date(data.saleStartAt).toISOString()
+          : undefined,
+        saleEndAt: data.saleEndAt?.trim()
+          ? new Date(data.saleEndAt).toISOString()
+          : undefined,
         stock: data.stock,
         weightGrams: data.weightGrams || undefined,
         lengthCm: data.lengthCm || undefined,
@@ -196,6 +214,43 @@ export function VariantForm({ productId, initial }: Props) {
           )}
         </div>
       </div>
+
+      <details className="border rounded-md p-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Oferta programada (precio rebajado con fechas)
+        </summary>
+        <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="salePriceNet">Precio de oferta neto (CLP)</Label>
+            <Input
+              id="salePriceNet"
+              type="number"
+              min={0}
+              {...register('salePriceNet')}
+              placeholder="Dejalo vacío para no usar oferta"
+            />
+            <p className="text-xs text-muted-foreground">
+              Si lo seteas, se usa durante el rango de fechas. Sin fechas, oferta permanente.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="saleStartAt">Desde (opcional)</Label>
+            <Input
+              id="saleStartAt"
+              type="datetime-local"
+              {...register('saleStartAt')}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="saleEndAt">Hasta (opcional)</Label>
+            <Input
+              id="saleEndAt"
+              type="datetime-local"
+              {...register('saleEndAt')}
+            />
+          </div>
+        </div>
+      </details>
 
       <details className="border rounded-md p-4">
         <summary className="cursor-pointer text-sm font-medium">
