@@ -14,6 +14,12 @@ import { WebpayProvider } from './webpay.provider';
     DteService,
     ShippingService,
   ],
-  exports: [PaymentService, EmailService, DteService, ShippingService],
+  exports: [
+    PaymentService,
+    WebpayProvider,
+    EmailService,
+    DteService,
+    ShippingService,
+  ],
 })
 export class ProvidersModule {}

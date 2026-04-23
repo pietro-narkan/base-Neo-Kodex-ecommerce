@@ -5,7 +5,6 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -60,10 +59,6 @@ async function bootstrap() {
       message: `Demasiados intentos. Volvé a probar en ${ctx.after}.`,
     }),
   });
-
-  // Parser x-www-form-urlencoded — requerido por el callback de Webpay,
-  // que hace POST al returnUrl con el body en formato form (no JSON).
-  await app.register(formbody as any);
 
   await app.register(multipart as any, {
     limits: {
