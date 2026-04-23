@@ -26,14 +26,21 @@ export class StorageService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    const exists = await this.client
-      .bucketExists(this.bucket)
-      .catch(() => false);
-    if (!exists) {
-      await this.client.makeBucket(this.bucket);
-      this.logger.log(`Bucket ${this.bucket} created`);
-    } else {
-      this.logger.log(`Bucket ${this.bucket} ready`);
+    // Best-effort: if MinIO is unreachable we log and continue. Bucket operations
+    // will fail with a clear error the first time someone uploads, but the API
+    // shouldn't refuse to boot just because object storage is momentarily down.
+    try {
+      const exists = await this.client.bucketExists(this.bucket);
+      if (!exists) {
+        await this.client.makeBucket(this.bucket);
+        this.logger.log(`Bucket ${this.bucket} created`);
+      } else {
+        this.logger.log(`Bucket ${this.bucket} ready`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `MinIO bucket check failed (${(err as Error).message}). Storage operations will fail until MinIO is reachable.`,
+      );
     }
   }
 
