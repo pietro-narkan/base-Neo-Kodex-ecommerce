@@ -23,6 +23,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { ProvidersModule } from './providers/providers.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { SeoModule } from './seo/seo.module';
 import { SettingsModule } from './settings/settings.module';
 import { ShippingRatesModule } from './shipping/shipping-rates.module';
@@ -59,6 +60,7 @@ import { VariantsModule } from './variants/variants.module';
     ShippingRatesModule,
     PaymentsModule,
     SeoModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
   providers: [

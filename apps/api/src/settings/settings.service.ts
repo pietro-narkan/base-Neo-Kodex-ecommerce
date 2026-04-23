@@ -5,6 +5,7 @@ import { ANALYTICS_SETTING_PREFIX } from '../analytics/analytics.catalog';
 import { AuditService } from '../audit/audit.service';
 import { EMAIL_TEMPLATE_SETTING_PREFIX } from '../emails/email-templates.catalog';
 import { PrismaService } from '../prisma/prisma.service';
+import { REVIEWS_SETTING_PREFIX } from '../reviews/reviews.service';
 
 // Schema of known settings, used by the admin UI to render appropriate
 // inputs. Adding a key here is optional; unknown keys are editable as JSON.
@@ -46,7 +47,8 @@ export class SettingsService {
         (r) =>
           !knownKeys.has(r.key as KnownSettingKey) &&
           !r.key.startsWith(EMAIL_TEMPLATE_SETTING_PREFIX) &&
-          !r.key.startsWith(ANALYTICS_SETTING_PREFIX),
+          !r.key.startsWith(ANALYTICS_SETTING_PREFIX) &&
+          !r.key.startsWith(REVIEWS_SETTING_PREFIX),
       )
       .map((r) => ({
         key: r.key,

@@ -98,6 +98,7 @@ model Customer {
   addresses Address[]
   orders    Order[]
   carts     Cart[]
+  reviews   ProductReview[]
 
   @@index([isGuest])
 }
@@ -145,6 +146,7 @@ model Product {
 
   variants Variant[]
   media    Media[]
+  reviews  ProductReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -534,4 +536,52 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// ================================================================
+// Product Reviews
+// Reviews se validan contra Orders: el email debe aparecer en alguna orden
+// pagada que incluya este producto. Arrancan en PENDING y pasan por
+// moderación antes de ser visibles públicamente.
+// Unique (productId, email) para evitar spam por el mismo comprador.
+// ================================================================
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+}
+
+model ProductReview {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // customerId opcional — se setea si el autor tiene cuenta, null si fue guest.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // Snapshot del autor (lo que mostramos en el sitio).
+  email     String
+  firstName String
+
+  // Nullable cuando stars_enabled = false en settings (solo texto).
+  rating  Int?
+  title   String?
+  comment String
+
+  status              ReviewStatus @default(PENDING)
+  isVerifiedPurchase  Boolean      @default(true)
+
+  // Respuesta opcional del vendedor (se muestra bajo la review).
+  adminReply   String?
+  adminReplyAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, email])
+  @@index([productId, status])
+  @@index([status])
+  @@index([createdAt])
 }
