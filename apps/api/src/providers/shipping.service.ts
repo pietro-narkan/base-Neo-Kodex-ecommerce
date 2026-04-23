@@ -38,9 +38,13 @@ export interface ShippingProvider {
 // ============================================================
 
 /**
- * Tarifa plana. Lee `store.shipping_flat_rate` (CLP) de Settings.
- * Si hay `store.shipping_free_threshold` y el subtotal lo supera, envío gratis.
- * Listo para producción.
+ * Shipping por región (si hay rates configurados en ShippingRate) con
+ * fallback a tarifa plana vía Setting. Producción-ready.
+ *
+ * Prioridad de resolución:
+ *   1. Si existe un ShippingRate activo matcheando el region de la dirección,
+ *      usa su rate + freeThreshold propio.
+ *   2. Si no, cae a `store.shipping_flat_rate` + `store.shipping_free_threshold`.
  */
 class FlatRateShippingProvider implements ShippingProvider {
   readonly name = 'flat';
@@ -48,6 +52,30 @@ class FlatRateShippingProvider implements ShippingProvider {
   constructor(private readonly prisma: PrismaService) {}
 
   async quote(params: ShippingQuoteParams): Promise<ShippingQuote[]> {
+    // Region-specific rate takes precedence.
+    if (params.address.region) {
+      const regional = await this.prisma.shippingRate.findFirst({
+        where: { region: params.address.region, active: true },
+      });
+      if (regional) {
+        const freeByThreshold =
+          regional.freeThreshold !== null &&
+          regional.freeThreshold !== undefined &&
+          params.subtotalGross >= regional.freeThreshold;
+        const cost = freeByThreshold ? 0 : regional.rate;
+        return [
+          {
+            name:
+              cost === 0 ? 'Envío gratis' : `Envío a ${regional.region}`,
+            cost,
+            etaDays: regional.etaDays ?? undefined,
+            code: 'regional',
+          },
+        ];
+      }
+    }
+
+    // Fallback: flat rate via Setting
     const [rateSetting, thresholdSetting] = await Promise.all([
       this.prisma.setting.findUnique({
         where: { key: 'store.shipping_flat_rate' },

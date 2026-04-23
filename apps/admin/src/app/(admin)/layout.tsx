@@ -11,6 +11,7 @@ import {
   Sliders,
   Tag,
   Ticket,
+  Truck,
   User,
   Users,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ const nav: NavItem[] = [
   { href: '/categories', label: 'Categorías', icon: Tag },
   { href: '/attributes', label: 'Atributos', icon: Sliders },
   { href: '/coupons', label: 'Cupones', icon: Ticket },
+  { href: '/shipping', label: 'Envíos', icon: Truck, adminOnly: true },
   { href: '/users', label: 'Usuarios admin', icon: Users, adminOnly: true },
   { href: '/audit-log', label: 'Registro de actividad', icon: ClipboardList, adminOnly: true },
   { href: '/settings', label: 'Configuración', icon: Settings, adminOnly: true },

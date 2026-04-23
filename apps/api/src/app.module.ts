@@ -20,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { ProvidersModule } from './providers/providers.module';
 import { SettingsModule } from './settings/settings.module';
+import { ShippingRatesModule } from './shipping/shipping-rates.module';
 import { StorageModule } from './storage/storage.module';
 import { VariantsModule } from './variants/variants.module';
 
@@ -47,6 +48,7 @@ import { VariantsModule } from './variants/variants.module';
     SettingsModule,
     CustomersModule,
     DashboardModule,
+    ShippingRatesModule,
   ],
   controllers: [AppController],
   providers: [

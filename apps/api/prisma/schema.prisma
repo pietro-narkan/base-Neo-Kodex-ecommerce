@@ -429,6 +429,25 @@ model PasswordResetToken {
 }
 
 // ================================================================
+// Shipping rates per region (Chile: 16 regiones)
+// ================================================================
+
+model ShippingRate {
+  id            String   @id @default(cuid())
+  region        String   @unique
+  // Base cost in CLP (IVA-inclusive). 0 = free for this region.
+  rate          Int
+  // Optional free-shipping threshold in CLP. If subtotal >= threshold, cost = 0.
+  freeThreshold Int?
+  etaDays       Int?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([active])
+}
+
+// ================================================================
 // Bulk import jobs (CSV → products, extensible to other types)
 // ================================================================
 
