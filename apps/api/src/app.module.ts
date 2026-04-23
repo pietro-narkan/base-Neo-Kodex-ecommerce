@@ -21,6 +21,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { ProvidersModule } from './providers/providers.module';
+import { SeoModule } from './seo/seo.module';
 import { SettingsModule } from './settings/settings.module';
 import { ShippingRatesModule } from './shipping/shipping-rates.module';
 import { StorageModule } from './storage/storage.module';
@@ -53,6 +54,7 @@ import { VariantsModule } from './variants/variants.module';
     DashboardModule,
     ShippingRatesModule,
     PaymentsModule,
+    SeoModule,
   ],
   controllers: [AppController],
   providers: [
