@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { DocumentType, OrderStatus, Prisma } from '@prisma/client';
 
+import { AuditService } from '../audit/audit.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DteService } from '../providers/dte.service';
@@ -67,6 +68,7 @@ export class OrdersService {
     private readonly email: EmailService,
     private readonly dte: DteService,
     private readonly shipping: ShippingService,
+    private readonly audit: AuditService,
   ) {}
 
   async checkout(params: {
@@ -434,6 +436,192 @@ export class OrdersService {
       throw new NotFoundException('Orden no encontrada');
     }
     return order;
+  }
+
+  /** Decide if stock should be tracked for a given order status. Canceled or refunded orders
+   *  are considered "released" — editing their items doesn't touch variant.stock.  */
+  private isStockActive(status: OrderStatus): boolean {
+    return status !== 'CANCELLED' && status !== 'REFUNDED';
+  }
+
+  private recalcTotals(
+    items: Array<{ quantity: number; priceNet: number; priceGross: number; taxAmount: number }>,
+    current: {
+      shippingAmount: number;
+      discountAmount: number;
+    },
+  ) {
+    const subtotalNet = items.reduce((s, i) => s + i.priceNet * i.quantity, 0);
+    const subtotalGross = items.reduce((s, i) => s + i.priceGross * i.quantity, 0);
+    const taxAmount = items.reduce((s, i) => s + i.taxAmount * i.quantity, 0);
+    const total = subtotalGross + current.shippingAmount - current.discountAmount;
+    return { subtotalNet, subtotalGross, taxAmount, total };
+  }
+
+  /**
+   * Change the quantity of a line item. If the order is in a stock-active state
+   * (not cancelled/refunded), adjusts variant.stock by the delta (atomic check
+   * to prevent overselling when increasing qty). Recalculates order totals.
+   */
+  async updateItemQuantity(
+    orderId: string,
+    itemId: string,
+    newQty: number,
+    actor: { id: string; email: string },
+  ) {
+    if (!Number.isInteger(newQty) || newQty < 1) {
+      throw new BadRequestException('Cantidad inválida (debe ser >= 1)');
+    }
+    const order = await this.getByIdAdmin(orderId);
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item no encontrado en esta orden');
+    const delta = newQty - item.quantity;
+    if (delta === 0) return order;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Adjust stock only when the order is "live" (not cancelled/refunded) AND
+      // the item still has a linked variant (imported historical orders may not).
+      if (this.isStockActive(order.status) && item.variantId) {
+        if (delta > 0) {
+          const result = await tx.variant.updateMany({
+            where: { id: item.variantId, stock: { gte: delta } },
+            data: { stock: { decrement: delta } },
+          });
+          if (result.count === 0) {
+            throw new BadRequestException(
+              `Stock insuficiente para aumentar a ${newQty} unidades`,
+            );
+          }
+        } else {
+          await tx.variant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: -delta } },
+          });
+        }
+      }
+
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: {
+          quantity: newQty,
+          subtotal: item.priceGross * newQty,
+        },
+      });
+
+      const allItems = await tx.orderItem.findMany({ where: { orderId } });
+      const totals = this.recalcTotals(allItems, {
+        shippingAmount: order.shippingAmount,
+        discountAmount: order.discountAmount,
+      });
+      await tx.order.update({
+        where: { id: orderId },
+        data: totals,
+      });
+    });
+
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'update.item.quantity',
+      entityType: 'order',
+      entityId: orderId,
+      before: { itemId, sku: item.sku, quantity: item.quantity },
+      after: { itemId, sku: item.sku, quantity: newQty },
+    });
+
+    return this.getByIdAdmin(orderId);
+  }
+
+  /**
+   * Remove a line item from the order. Returns stock if applicable. If it was
+   * the last item, the order is preserved (empty) — admin must cancel explicitly.
+   */
+  async removeItem(
+    orderId: string,
+    itemId: string,
+    actor: { id: string; email: string },
+  ) {
+    const order = await this.getByIdAdmin(orderId);
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item no encontrado en esta orden');
+
+    await this.prisma.$transaction(async (tx) => {
+      if (this.isStockActive(order.status) && item.variantId) {
+        await tx.variant.update({
+          where: { id: item.variantId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+      await tx.orderItem.delete({ where: { id: itemId } });
+
+      const allItems = await tx.orderItem.findMany({ where: { orderId } });
+      const totals = this.recalcTotals(allItems, {
+        shippingAmount: order.shippingAmount,
+        discountAmount: order.discountAmount,
+      });
+      await tx.order.update({ where: { id: orderId }, data: totals });
+    });
+
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'remove.item',
+      entityType: 'order',
+      entityId: orderId,
+      before: { itemId, sku: item.sku, quantity: item.quantity, productName: item.productName },
+    });
+
+    return this.getByIdAdmin(orderId);
+  }
+
+  /**
+   * Update shipping or billing address of an order. Does NOT modify Customer
+   * addresses (those are separate records). Creates a new Address row and
+   * points the order to it; the previous address record is left untouched
+   * for audit purposes.
+   */
+  async updateAddress(
+    orderId: string,
+    kind: 'shipping' | 'billing',
+    dto: AddressDto,
+    actor: { id: string; email: string },
+  ) {
+    const order = await this.getByIdAdmin(orderId);
+    const created = await this.prisma.address.create({
+      data: {
+        customerId: order.customerId,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        line1: dto.line1,
+        line2: dto.line2,
+        city: dto.city,
+        region: dto.region,
+        postalCode: dto.postalCode,
+        country: dto.country ?? 'CL',
+      },
+    });
+
+    const data: Prisma.OrderUpdateInput =
+      kind === 'shipping'
+        ? { shippingAddress: { connect: { id: created.id } } }
+        : { billingAddress: { connect: { id: created.id } } };
+
+    await this.prisma.order.update({ where: { id: orderId }, data });
+
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: `update.${kind}Address`,
+      entityType: 'order',
+      entityId: orderId,
+      before: kind === 'shipping'
+        ? { addressId: order.shippingAddressId }
+        : { addressId: order.billingAddressId },
+      after: { addressId: created.id, ...dto },
+    });
+
+    return this.getByIdAdmin(orderId);
   }
 
   async updateStatus(id: string, status: OrderStatus) {

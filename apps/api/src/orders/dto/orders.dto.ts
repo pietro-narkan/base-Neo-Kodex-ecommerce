@@ -110,6 +110,28 @@ export class UpdateOrderStatusDto {
   status!: OrderStatusDto;
 }
 
+export class UpdateItemQuantityDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(9999)
+  quantity!: number;
+}
+
+export enum OrderAddressKind {
+  SHIPPING = 'shipping',
+  BILLING = 'billing',
+}
+
+export class UpdateOrderAddressDto {
+  @IsEnum(OrderAddressKind)
+  kind!: 'shipping' | 'billing';
+
+  @ValidateNested()
+  @Type(() => AddressDto)
+  address!: AddressDto;
+}
+
 export class CustomerOrderListQueryDto {
   @IsOptional()
   @Type(() => Number)

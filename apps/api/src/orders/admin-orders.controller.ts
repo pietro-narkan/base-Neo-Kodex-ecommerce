@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -10,9 +11,13 @@ import {
 } from '@nestjs/common';
 import type { OrderStatus } from '@prisma/client';
 
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
+import type { JwtPayload } from '../auth/types';
 import {
   AdminOrderListQueryDto,
+  UpdateItemQuantityDto,
+  UpdateOrderAddressDto,
   UpdateOrderStatusDto,
 } from './dto/orders.dto';
 import { OrdersService } from './orders.service';
@@ -41,7 +46,6 @@ export class AdminOrdersController {
     );
   }
 
-  // Streams matching orders as CSV. Declared BEFORE :id so the literal route wins.
   @Get('export')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="orders-export.csv"')
@@ -65,5 +69,42 @@ export class AdminOrdersController {
     @Body() dto: UpdateOrderStatusDto,
   ) {
     return this.orders.updateStatus(id, dto.status as OrderStatus);
+  }
+
+  @Patch(':id/items/:itemId')
+  updateItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateItemQuantityDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.orders.updateItemQuantity(id, itemId, dto.quantity, {
+      id: user.sub,
+      email: user.email,
+    });
+  }
+
+  @Delete(':id/items/:itemId')
+  removeItem(
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.orders.removeItem(id, itemId, {
+      id: user.sub,
+      email: user.email,
+    });
+  }
+
+  @Patch(':id/address')
+  updateAddress(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderAddressDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.orders.updateAddress(id, dto.kind, dto.address, {
+      id: user.sub,
+      email: user.email,
+    });
   }
 }

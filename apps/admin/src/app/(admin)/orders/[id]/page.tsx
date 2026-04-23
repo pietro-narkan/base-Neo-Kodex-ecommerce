@@ -1,17 +1,27 @@
 'use client';
 
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  Loader2,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -20,19 +30,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { apiGet, apiPatch } from '@/lib/api';
-import { cn, formatCLP, formatDate } from '@/lib/utils';
+import { api, apiDelete, apiGet, apiPatch } from '@/lib/api';
+import { formatCLP, formatDate } from '@/lib/utils';
 
-type OrderStatus =
-  | 'PENDING'
-  | 'PAID'
-  | 'FULFILLED'
-  | 'CANCELLED'
-  | 'REFUNDED';
+type OrderStatus = 'PENDING' | 'PAID' | 'FULFILLED' | 'CANCELLED' | 'REFUNDED';
 type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
 type DocumentType = 'NONE' | 'BOLETA' | 'FACTURA';
 
 interface Address {
+  id: string;
   firstName: string;
   lastName: string;
   phone: string | null;
@@ -62,13 +68,11 @@ interface Order {
   documentType: DocumentType;
   documentFolio: string | null;
   documentNumber: string | null;
-
   email: string;
   firstName: string;
   lastName: string;
   phone: string | null;
   rut: string | null;
-
   subtotalNet: number;
   subtotalGross: number;
   taxAmount: number;
@@ -76,15 +80,12 @@ interface Order {
   discountAmount: number;
   total: number;
   couponCode: string | null;
-
   paymentProvider: string | null;
   paymentReference: string | null;
   shippingProvider: string | null;
   trackingNumber: string | null;
-
   shippingAddress: Address | null;
   billingAddress: Address | null;
-
   items: OrderItem[];
   notes: string | null;
   createdAt: string;
@@ -114,27 +115,6 @@ const transitions: Record<OrderStatus, OrderStatus[]> = {
   REFUNDED: [],
 };
 
-function AddressBlock({ title, address }: { title: string; address: Address }) {
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-        {title}
-      </div>
-      <div className="text-sm">
-        {address.firstName} {address.lastName}
-        {address.phone && <> · {address.phone}</>}
-      </div>
-      <div className="text-sm text-muted-foreground">
-        {address.line1}
-        {address.line2 && <>, {address.line2}</>}
-        <br />
-        {address.city}, {address.region}
-        {address.postalCode && <> · {address.postalCode}</>}
-      </div>
-    </div>
-  );
-}
-
 export default function OrderDetailPage({
   params,
 }: {
@@ -144,6 +124,10 @@ export default function OrderDetailPage({
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+
+  // Inline-edit state for items: map of itemId → new qty being edited
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState<number>(1);
 
   const load = useCallback(() => {
     apiGet<Order>(`/admin/orders/${id}`)
@@ -156,20 +140,48 @@ export default function OrderDetailPage({
   }, [load]);
 
   async function handleChangeStatus(next: OrderStatus) {
-    const label = statusLabels[next].toLowerCase();
-    if (!window.confirm(`¿Marcar orden como ${label}?`)) return;
+    if (!window.confirm(`¿Marcar orden como ${statusLabels[next].toLowerCase()}?`)) return;
     setUpdating(true);
+    setError(null);
     try {
       await apiPatch(`/admin/orders/${id}/status`, { status: next });
       load();
     } catch (err) {
-      alert((err as Error).message);
+      setError((err as Error).message);
     } finally {
       setUpdating(false);
     }
   }
 
-  if (error) {
+  async function handleSaveQty(itemId: string) {
+    setUpdating(true);
+    setError(null);
+    try {
+      await apiPatch(`/admin/orders/${id}/items/${itemId}`, { quantity: editQty });
+      setEditingItem(null);
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function handleRemoveItem(item: OrderItem) {
+    if (!window.confirm(`¿Quitar "${item.productName}" de la orden? Se restaura stock.`)) return;
+    setUpdating(true);
+    setError(null);
+    try {
+      await apiDelete(`/admin/orders/${id}/items/${item.id}`);
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  if (error && !order) {
     return <div className="text-sm text-destructive">{error}</div>;
   }
 
@@ -182,6 +194,7 @@ export default function OrderDetailPage({
   }
 
   const allowed = transitions[order.status];
+  const canEditItems = order.status !== 'REFUNDED'; // allow edits on everything else incl cancelled
 
   return (
     <div className="space-y-6">
@@ -202,13 +215,9 @@ export default function OrderDetailPage({
               {statusLabels[order.status]}
             </Badge>
             <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">
-              Pago: {order.paymentStatus}
-            </span>
+            <span className="text-muted-foreground">Pago: {order.paymentStatus}</span>
             <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">
-              {formatDate(order.createdAt)}
-            </span>
+            <span className="text-muted-foreground">{formatDate(order.createdAt)}</span>
           </div>
         </div>
         {allowed.length > 0 && (
@@ -221,13 +230,18 @@ export default function OrderDetailPage({
                 disabled={updating}
                 onClick={() => handleChangeStatus(s)}
               >
-                {updating && <Loader2 className="animate-spin" />}
                 Marcar como {statusLabels[s].toLowerCase()}
               </Button>
             ))}
           </div>
         )}
       </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
@@ -243,6 +257,7 @@ export default function OrderDetailPage({
                   <TableHead className="text-right">Cant.</TableHead>
                   <TableHead className="text-right">Precio</TableHead>
                   <TableHead className="text-right">Subtotal</TableHead>
+                  {canEditItems && <TableHead className="w-20" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -260,14 +275,64 @@ export default function OrderDetailPage({
                       {item.sku}
                     </TableCell>
                     <TableCell className="text-right">
-                      {item.quantity}
+                      {editingItem === item.id ? (
+                        <div className="flex items-center gap-1 justify-end">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={editQty}
+                            onChange={(e) => setEditQty(Number(e.target.value))}
+                            className="w-16 text-right"
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSaveQty(item.id)}
+                            disabled={updating}
+                          >
+                            <Check className="size-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingItem(null)}
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        item.quantity
+                      )}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {formatCLP(item.priceGross)}
-                    </TableCell>
+                    <TableCell className="text-right">{formatCLP(item.priceGross)}</TableCell>
                     <TableCell className="text-right font-medium">
-                      {formatCLP(item.subtotal)}
+                      {formatCLP(item.priceGross * item.quantity)}
                     </TableCell>
+                    {canEditItems && editingItem !== item.id && (
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingItem(item.id);
+                              setEditQty(item.quantity);
+                            }}
+                            title="Editar cantidad"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleRemoveItem(item)}
+                            title="Quitar de la orden"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -297,9 +362,7 @@ export default function OrderDetailPage({
                 <span>
                   Descuento
                   {order.couponCode && (
-                    <span className="font-mono text-xs ml-1">
-                      ({order.couponCode})
-                    </span>
+                    <span className="font-mono text-xs ml-1">({order.couponCode})</span>
                   )}
                 </span>
                 <span>-{formatCLP(order.discountAmount)}</span>
@@ -324,17 +387,15 @@ export default function OrderDetailPage({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div>
-              <span className="text-muted-foreground">Nombre:</span>{' '}
-              {order.firstName} {order.lastName}
+              <span className="text-muted-foreground">Nombre:</span> {order.firstName}{' '}
+              {order.lastName}
             </div>
             <div>
-              <span className="text-muted-foreground">Email:</span>{' '}
-              {order.email}
+              <span className="text-muted-foreground">Email:</span> {order.email}
             </div>
             {order.phone && (
               <div>
-                <span className="text-muted-foreground">Teléfono:</span>{' '}
-                {order.phone}
+                <span className="text-muted-foreground">Teléfono:</span> {order.phone}
               </div>
             )}
             {order.rut && (
@@ -345,23 +406,12 @@ export default function OrderDetailPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Direcciones</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {order.shippingAddress && (
-              <AddressBlock title="Envío" address={order.shippingAddress} />
-            )}
-            {order.billingAddress &&
-              order.billingAddress !== order.shippingAddress && (
-                <AddressBlock
-                  title="Facturación"
-                  address={order.billingAddress}
-                />
-              )}
-          </CardContent>
-        </Card>
+        <AddressEditor
+          orderId={id}
+          shipping={order.shippingAddress}
+          billing={order.billingAddress}
+          onSaved={load}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -376,9 +426,7 @@ export default function OrderDetailPage({
             </div>
             <div>
               <span className="text-muted-foreground">Referencia:</span>{' '}
-              <span className="font-mono text-xs">
-                {order.paymentReference ?? '—'}
-              </span>
+              <span className="font-mono text-xs">{order.paymentReference ?? '—'}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Proveedor envío:</span>{' '}
@@ -403,17 +451,13 @@ export default function OrderDetailPage({
             {order.documentFolio && (
               <div>
                 <span className="text-muted-foreground">Folio:</span>{' '}
-                <span className="font-mono text-xs">
-                  {order.documentFolio}
-                </span>
+                <span className="font-mono text-xs">{order.documentFolio}</span>
               </div>
             )}
             {order.documentNumber && (
               <div>
                 <span className="text-muted-foreground">N°:</span>{' '}
-                <span className="font-mono text-xs">
-                  {order.documentNumber}
-                </span>
+                <span className="font-mono text-xs">{order.documentNumber}</span>
               </div>
             )}
           </CardContent>
@@ -430,6 +474,232 @@ export default function OrderDetailPage({
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function AddressEditor({
+  orderId,
+  shipping,
+  billing,
+  onSaved,
+}: {
+  orderId: string;
+  shipping: Address | null;
+  billing: Address | null;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState<'shipping' | 'billing' | null>(null);
+  const [form, setForm] = useState<Address | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEdit(kind: 'shipping' | 'billing', addr: Address | null) {
+    setEditing(kind);
+    setForm(
+      addr ?? {
+        id: '',
+        firstName: '',
+        lastName: '',
+        phone: null,
+        line1: '',
+        line2: null,
+        city: '',
+        region: '',
+        postalCode: null,
+        country: 'CL',
+      },
+    );
+    setError(null);
+  }
+
+  async function save() {
+    if (!form || !editing) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/admin/orders/${orderId}/address`, {
+        method: 'PATCH',
+        body: {
+          kind: editing,
+          address: {
+            firstName: form.firstName,
+            lastName: form.lastName,
+            phone: form.phone ?? undefined,
+            line1: form.line1,
+            line2: form.line2 ?? undefined,
+            city: form.city,
+            region: form.region,
+            postalCode: form.postalCode ?? undefined,
+            country: form.country,
+          },
+        },
+      });
+      setEditing(null);
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Direcciones</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {editing && form ? (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">
+              Editar dirección de {editing === 'shipping' ? 'envío' : 'facturación'}
+            </p>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <FormField
+                label="Nombre"
+                value={form.firstName}
+                onChange={(v) => setForm({ ...form, firstName: v })}
+              />
+              <FormField
+                label="Apellido"
+                value={form.lastName}
+                onChange={(v) => setForm({ ...form, lastName: v })}
+              />
+            </div>
+            <FormField
+              label="Línea 1"
+              value={form.line1}
+              onChange={(v) => setForm({ ...form, line1: v })}
+            />
+            <FormField
+              label="Línea 2 (opcional)"
+              value={form.line2 ?? ''}
+              onChange={(v) => setForm({ ...form, line2: v || null })}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <FormField
+                label="Ciudad"
+                value={form.city}
+                onChange={(v) => setForm({ ...form, city: v })}
+              />
+              <FormField
+                label="Región"
+                value={form.region}
+                onChange={(v) => setForm({ ...form, region: v })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <FormField
+                label="Teléfono"
+                value={form.phone ?? ''}
+                onChange={(v) => setForm({ ...form, phone: v || null })}
+              />
+              <FormField
+                label="Código postal"
+                value={form.postalCode ?? ''}
+                onChange={(v) => setForm({ ...form, postalCode: v || null })}
+              />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="ghost" onClick={() => setEditing(null)}>
+                Cancelar
+              </Button>
+              <Button onClick={save} disabled={saving}>
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                Guardar
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <AddressBlock
+              title="Envío"
+              address={shipping}
+              onEdit={() => startEdit('shipping', shipping)}
+            />
+            {billing && billing.id !== shipping?.id && (
+              <AddressBlock
+                title="Facturación"
+                address={billing}
+                onEdit={() => startEdit('billing', billing)}
+              />
+            )}
+            {!billing && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => startEdit('billing', null)}
+              >
+                + Agregar dirección de facturación
+              </Button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AddressBlock({
+  title,
+  address,
+  onEdit,
+}: {
+  title: string;
+  address: Address | null;
+  onEdit: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          {title}
+        </div>
+        <Button size="sm" variant="ghost" onClick={onEdit}>
+          <Pencil className="size-3.5" />
+          Editar
+        </Button>
+      </div>
+      {address ? (
+        <div className="text-sm">
+          <div>
+            {address.firstName} {address.lastName}
+            {address.phone && <> · {address.phone}</>}
+          </div>
+          <div className="text-muted-foreground">
+            {address.line1}
+            {address.line2 && <>, {address.line2}</>}
+            <br />
+            {address.city}, {address.region}
+            {address.postalCode && <> · {address.postalCode}</>}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">—</p>
+      )}
+    </div>
+  );
+}
+
+function FormField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
