@@ -250,6 +250,112 @@ docker exec <api-container> sh -c \
 
 Preserva números WC originales, upsert customer por email, linkea `variantId` si el SKU existe, snapshot en OrderItem si no. Idempotente.
 
+## Repositorio GitHub
+
+Repo: **`pietro-narkan/base-Neo-Kodex-ecommerce`** · default branch `main` · público por ahora (ver pendientes).
+
+```bash
+git clone https://github.com/pietro-narkan/base-Neo-Kodex-ecommerce.git
+```
+
+### Flujo de trabajo
+
+- Trabajo directo en `main` (proyecto de 1 dev). Si se suma gente, pasar a feature branches + PR.
+- Cada `push` a `main` dispara **dos cosas**:
+  1. **CI en GitHub Actions** — typecheck + tests
+  2. **Auto-deploy en Coolify** — webhook → redeploy del stack en el VPS (ver `## Deploy en Coolify`)
+
+### Convenciones de commit
+
+Conventional Commits con scope entre paréntesis. Ejemplos del historial:
+
+- `feat(seo): panel de auditoría SEO en /admin/seo`
+- `fix(deploy): limitar heap Node a 1GB en build stages`
+- `docs(readme): actualizar con features recientes`
+- `ci: dependabot config`
+- `chore(deps): ...` (generados por Dependabot)
+
+### `.github/workflows/ci.yml`
+
+Dos jobs en paralelo, corren en `push` y `pull_request` contra `main`:
+
+| Job | Qué hace |
+|---|---|
+| `typecheck` | `pnpm install --frozen-lockfile` → `prisma generate` → `pnpm -r typecheck` en todos los workspaces |
+| `test-api` | Levanta Postgres 16 como `services:` del runner en puerto **5433** (match con el docker-compose local), aplica migraciones con `prisma migrate deploy`, corre los 15 tests Vitest |
+
+Env vars del job de tests están **inline en el workflow** (no son secrets reales, son valores de test):
+`JWT_SECRET=test-ci-jwt`, `REFRESH_SECRET=test-ci-refresh`, `EMAIL_PROVIDER=noop`, `PAYMENT_PROVIDER=manual`, `DTE_PROVIDER=mock`, `SHIPPING_PROVIDER=flat`.
+
+No hay secrets reales configurados en GitHub Actions (Settings → Secrets). Si se agregan (ej: para un job de deploy), usar `secrets.NAME` y documentarlos aquí.
+
+### `.github/dependabot.yml`
+
+- **npm** — chequeo semanal los lunes; minor/patch **agrupados por ecosistema** (`nest`, `fastify-plugins`, `next-react`, `prisma`) para reducir ruido. Security updates y majors abren PR individual. Max 5 PRs abiertos, commit prefix `chore(deps)`, label `dependencies`.
+- **github-actions** — chequeo semanal, label `dependencies` + `ci`.
+
+**Cómo manejar PRs de Dependabot**: esperar que CI pase (verde), abrir el PR, revisar changelog linkeado en la descripción, mergear (preferido: **squash**). Si se cierra sin mergear, dejar nota del por qué en el comentario para no re-abrir idéntico la semana siguiente.
+
+Al momento de escribir hay PRs pendientes para `@nestjs/*` 11.x (major — revisar breaking changes antes de mergear), `@fastify/multipart` 10 (major), `@fastify/rate-limit` 10.3, y bumps de actions a v6 (`checkout`, `setup-node`, `pnpm/action-setup`).
+
+### Webhook GitHub → Coolify
+
+Configurado en **Settings → Webhooks** del repo:
+
+- URL: `http://<coolify-host>:8000/webhooks/source/github/events/manual`
+- Content type: `application/json`
+- Secret: compartido con Coolify (rotar si se filtra — ver pendientes de hardening)
+- Eventos: **solo `push`**
+
+Coolify clona por HTTPS público (no usa GitHub App todavía). Al pasar el repo a privado hay que instalar la GitHub App de Coolify en la org y reconfigurar la fuente.
+
+### Secretos y archivos que nunca se commitean
+
+`.gitignore` bloquea:
+
+- `.env`, `.env.local`, `.env.*.local` — credenciales reales (DB, JWT, API keys, Coolify token)
+- `ssh-public-key.md`, `ssh.png`, `webhook.png`, `columnas.jpg` — screenshots y claves del setup inicial del VPS
+- `wc-product-export-*.csv`, `orders-*.csv`, `*.csv` — data de clientes (**nunca commitear**, LGPD / Ley 19.628)
+- `node_modules/`, `.pnpm-store/`, `dist/`, `build/`, `.next/`, `.turbo/` — artefactos
+- `.docker-data/` — volumenes locales de Postgres + MinIO
+
+**Los `.env` reales** viven en el panel de Coolify (env vars de la Application) + password manager del equipo. No se pasan por GitHub ni Slack.
+
+### Onboarding desde otro equipo
+
+```bash
+# 1. Toolchain (recomendado Volta)
+volta install node@22 pnpm@9.15.0
+
+# 2. Clonar y entrar
+git clone https://github.com/pietro-narkan/base-Neo-Kodex-ecommerce.git
+cd base-Neo-Kodex-ecommerce
+
+# 3. Instalar deps
+pnpm install
+
+# 4. .env locales (dev: los defaults del docker-compose alcanzan)
+cp apps/api/.env.example apps/api/.env
+cp apps/admin/.env.example apps/admin/.env.local
+cp apps/storefront/.env.example apps/storefront/.env.local
+
+# 5. Postgres + MinIO + migraciones + seed
+docker compose up -d
+pnpm --filter @neo-kodex/api prisma:migrate
+pnpm --filter @neo-kodex/api prisma:seed
+
+# 6. Levantar api + admin + storefront
+pnpm -r --parallel dev
+```
+
+Para tocar **producción** se necesita:
+
+- Acceso al panel Coolify del VPS Hostinger (invitar usuario desde Coolify UI)
+- SSH key cargada en el VPS (`~/.ssh/authorized_keys` del user deploy)
+- Coolify API token si se va a automatizar con scripts
+
+Pedir a `agencia.narkan@gmail.com`.
+
 ## Deploy en Coolify
 
 Deploy funcionando en VPS Hostinger con Coolify + URLs provisorias sslip.io.
