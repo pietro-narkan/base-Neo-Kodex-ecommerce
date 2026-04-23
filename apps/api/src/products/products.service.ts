@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, ProductStatus } from '@prisma/client';
 
+import { AuditService } from '../audit/audit.service';
 import type { PaginationDto } from '../common/dto/pagination.dto';
 import { slugify } from '../common/slugify';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,12 @@ import type {
   CreateProductDto,
   UpdateProductDto,
 } from './dto/products.dto';
+
+// Public listings exclude drafts, archived and soft-deleted rows.
+const publicWhere = {
+  status: 'ACTIVE' as ProductStatus,
+  deletedAt: null,
+};
 
 const publicInclude = {
   category: true,
@@ -46,9 +53,17 @@ const adminInclude = {
   media: { orderBy: { position: 'asc' as const } },
 } satisfies Prisma.ProductInclude;
 
+interface AdminListFilters {
+  status?: ProductStatus;
+  includeDeleted?: boolean;
+}
+
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async listPublic(
     pagination: PaginationDto,
@@ -57,7 +72,7 @@ export class ProductsService {
     const page = pagination.page ?? 1;
     const limit = pagination.limit ?? 20;
     const where: Prisma.ProductWhereInput = {
-      active: true,
+      ...publicWhere,
       ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
       ...(filters.featured !== undefined ? { featured: filters.featured } : {}),
     };
@@ -85,23 +100,28 @@ export class ProductsService {
       where: { slug },
       include: publicInclude,
     });
-    if (!product || !product.active) {
+    if (!product || product.status !== 'ACTIVE' || product.deletedAt !== null) {
       throw new NotFoundException('Producto no encontrado');
     }
     return product;
   }
 
-  async listAdmin(pagination: PaginationDto) {
+  async listAdmin(pagination: PaginationDto, filters: AdminListFilters = {}) {
     const page = pagination.page ?? 1;
     const limit = pagination.limit ?? 20;
+    const where: Prisma.ProductWhereInput = {
+      ...(filters.includeDeleted ? {} : { deletedAt: null }),
+      ...(filters.status ? { status: filters.status } : {}),
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
+        where,
         skip: (page - 1) * limit,
         take: limit,
         include: adminInclude,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.product.count(),
+      this.prisma.product.count({ where }),
     ]);
     return {
       data,
@@ -123,7 +143,7 @@ export class ProductsService {
     return product;
   }
 
-  async create(dto: CreateProductDto) {
+  async create(dto: CreateProductDto, actor?: { id: string; email: string }) {
     const slug = dto.slug?.trim() || slugify(dto.name);
     if (!slug) {
       throw new BadRequestException('Slug inválido');
@@ -142,23 +162,44 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.product.create({
+    // Resolve the initial status. Accepting status directly if provided; otherwise
+    // default to ACTIVE for backward compat. `active` kept in sync for public queries.
+    const status: ProductStatus = dto.status ?? 'ACTIVE';
+
+    const created = await this.prisma.product.create({
       data: {
         name: dto.name,
         slug,
         description: dto.description,
         shortDesc: dto.shortDesc,
         categoryId: dto.categoryId,
-        active: dto.active ?? true,
+        status,
+        active: status === 'ACTIVE',
         featured: dto.featured ?? false,
         metaTitle: dto.metaTitle,
         metaDescription: dto.metaDescription,
       },
       include: adminInclude,
     });
+
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'create',
+        entityType: 'product',
+        entityId: created.id,
+        after: { name: created.name, slug: created.slug, status: created.status },
+      });
+    }
+    return created;
   }
 
-  async update(id: string, dto: UpdateProductDto) {
+  async update(
+    id: string,
+    dto: UpdateProductDto,
+    actor?: { id: string; email: string },
+  ) {
     const current = await this.getByIdAdmin(id);
 
     let slug = current.slug;
@@ -183,26 +224,103 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.product.update({
+    const nextStatus = dto.status ?? current.status;
+    // Use UncheckedUpdateInput so we can pass `categoryId` as a raw FK (simpler
+    // than the nested `category: { connect: ... }` form for null/set flows).
+    const data: Prisma.ProductUncheckedUpdateInput = {
+      name: dto.name,
+      slug,
+      description: dto.description,
+      shortDesc: dto.shortDesc,
+      categoryId: dto.categoryId,
+      status: dto.status,
+      // Keep boolean active in sync when status changes.
+      active: dto.status !== undefined ? nextStatus === 'ACTIVE' : dto.active,
+      featured: dto.featured,
+      metaTitle: dto.metaTitle,
+      metaDescription: dto.metaDescription,
+    };
+
+    const updated = await this.prisma.product.update({
       where: { id },
-      data: {
-        name: dto.name,
-        slug,
-        description: dto.description,
-        shortDesc: dto.shortDesc,
-        categoryId: dto.categoryId,
-        active: dto.active,
-        featured: dto.featured,
-        metaTitle: dto.metaTitle,
-        metaDescription: dto.metaDescription,
-      },
+      data,
       include: adminInclude,
     });
+
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'update',
+        entityType: 'product',
+        entityId: id,
+        before: {
+          name: current.name,
+          status: current.status,
+          active: current.active,
+          featured: current.featured,
+        },
+        after: {
+          name: updated.name,
+          status: updated.status,
+          active: updated.active,
+          featured: updated.featured,
+        },
+      });
+    }
+    return updated;
   }
 
-  async remove(id: string) {
-    await this.getByIdAdmin(id);
-    await this.prisma.product.delete({ where: { id } });
+  /**
+   * Soft delete: mark deletedAt instead of removing the row. Preserves
+   * order item references (OrderItem.variantId relies on Variant/Product existing).
+   * Use `purge` for a hard delete.
+   */
+  async remove(id: string, actor?: { id: string; email: string }) {
+    const product = await this.getByIdAdmin(id);
+    if (product.deletedAt) {
+      return { ok: true }; // already soft-deleted, idempotent
+    }
+    await this.prisma.product.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: 'ARCHIVED',
+        active: false,
+      },
+    });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'delete.soft',
+        entityType: 'product',
+        entityId: id,
+        before: { name: product.name, status: product.status },
+      });
+    }
     return { ok: true };
+  }
+
+  /** Restore a soft-deleted product back to ARCHIVED (admin can re-activate after). */
+  async restore(id: string, actor?: { id: string; email: string }) {
+    const product = await this.getByIdAdmin(id);
+    if (!product.deletedAt) {
+      throw new BadRequestException('Producto no está eliminado');
+    }
+    const restored = await this.prisma.product.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'restore',
+        entityType: 'product',
+        entityId: id,
+      });
+    }
+    return restored;
   }
 }

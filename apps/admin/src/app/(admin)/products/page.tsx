@@ -29,16 +29,26 @@ interface Category {
   name: string;
 }
 
+type ProductStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
 interface Product {
   id: string;
   name: string;
   slug: string;
   active: boolean;
+  status: ProductStatus;
+  deletedAt: string | null;
   featured: boolean;
   category: Category | null;
   variants: Variant[];
   createdAt: string;
 }
+
+const statusLabels: Record<ProductStatus, string> = {
+  DRAFT: 'Borrador',
+  ACTIVE: 'Activo',
+  ARCHIVED: 'Archivado',
+};
 
 function priceRange(variants: Variant[]): string {
   if (variants.length === 0) return '—';
@@ -155,8 +165,16 @@ export default function ProductsListPage() {
                   <TableCell>{priceRange(p.variants)}</TableCell>
                   <TableCell>{totalStock(p.variants)}</TableCell>
                   <TableCell>
-                    <Badge variant={p.active ? 'success' : 'secondary'}>
-                      {p.active ? 'Activo' : 'Inactivo'}
+                    <Badge
+                      variant={
+                        p.status === 'ACTIVE'
+                          ? 'success'
+                          : p.status === 'DRAFT'
+                            ? 'warning'
+                            : 'secondary'
+                      }
+                    >
+                      {statusLabels[p.status]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right space-x-1">

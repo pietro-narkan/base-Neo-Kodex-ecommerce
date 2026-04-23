@@ -23,7 +23,7 @@ const schema = z.object({
   shortDesc: z.string().optional(),
   description: z.string().optional(),
   categoryId: z.string().optional(),
-  active: z.boolean(),
+  status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']),
   featured: z.boolean(),
   metaTitle: z.string().optional(),
   metaDescription: z.string().optional(),
@@ -38,7 +38,7 @@ interface Product {
   description?: string | null;
   shortDesc?: string | null;
   categoryId?: string | null;
-  active: boolean;
+  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   featured: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -78,7 +78,7 @@ export function ProductForm({ initial }: Props) {
           shortDesc: initial.shortDesc ?? '',
           description: initial.description ?? '',
           categoryId: initial.categoryId ?? '',
-          active: initial.active,
+          status: initial.status,
           featured: initial.featured,
           metaTitle: initial.metaTitle ?? '',
           metaDescription: initial.metaDescription ?? '',
@@ -89,7 +89,7 @@ export function ProductForm({ initial }: Props) {
           shortDesc: '',
           description: '',
           categoryId: '',
-          active: true,
+          status: 'DRAFT',
           featured: false,
           metaTitle: '',
           metaDescription: '',
@@ -106,7 +106,7 @@ export function ProductForm({ initial }: Props) {
         shortDesc: data.shortDesc?.trim() || undefined,
         description: data.description?.trim() || undefined,
         categoryId: data.categoryId || undefined,
-        active: data.active,
+        status: data.status,
         featured: data.featured,
         metaTitle: data.metaTitle?.trim() || undefined,
         metaDescription: data.metaDescription?.trim() || undefined,
@@ -168,24 +168,24 @@ export function ProductForm({ initial }: Props) {
             ))}
           </Select>
         </div>
-        <div className="flex items-end gap-6 pb-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-input"
-              {...register('active')}
-            />
-            <span className="text-sm">Activo</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-input"
-              {...register('featured')}
-            />
-            <span className="text-sm">Destacado</span>
-          </label>
+        <div className="space-y-2">
+          <Label htmlFor="status">Estado</Label>
+          <Select id="status" {...register('status')}>
+            <option value="DRAFT">Borrador (invisible en tienda)</option>
+            <option value="ACTIVE">Activo (visible y comprable)</option>
+            <option value="ARCHIVED">Archivado (oculto, se conserva)</option>
+          </Select>
         </div>
+      </div>
+      <div className="flex items-center gap-6">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-input"
+            {...register('featured')}
+          />
+          <span className="text-sm">Destacado</span>
+        </label>
       </div>
 
       <details className="border rounded-md p-4">

@@ -51,6 +51,12 @@ enum CouponType {
   FIXED
 }
 
+enum ProductStatus {
+  DRAFT     // visible solo en admin, no se lista en storefront
+  ACTIVE    // listado y comprable
+  ARCHIVED  // no listado, preservado para histórico (órdenes viejas lo siguen viendo)
+}
+
 enum ImportStatus {
   PENDING
   PROCESSING
@@ -119,15 +125,21 @@ model Category {
 }
 
 model Product {
-  id              String    @id @default(cuid())
+  id              String        @id @default(cuid())
   name            String
-  slug            String    @unique
+  slug            String        @unique
   description     String?
   shortDesc       String?
   categoryId      String?
-  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  active          Boolean   @default(true)
-  featured        Boolean   @default(false)
+  category        Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  // Kept as a convenience for public queries ({active:true, deletedAt:null}).
+  // Synced automatically with `status` in ProductsService.
+  active          Boolean       @default(true)
+  // Richer lifecycle: DRAFT (admin-only) / ACTIVE (shoppable) / ARCHIVED (hidden, kept for history).
+  status          ProductStatus @default(ACTIVE)
+  // Soft delete. Rows with deletedAt != null are excluded from all queries except admin-opt-in.
+  deletedAt       DateTime?
+  featured        Boolean       @default(false)
   metaTitle       String?
   metaDescription String?
 
@@ -137,6 +149,8 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([status])
+  @@index([deletedAt])
   @@index([categoryId])
   @@index([active])
   @@index([featured])

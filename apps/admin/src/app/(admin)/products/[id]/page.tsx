@@ -54,7 +54,7 @@ interface Product {
   description: string | null;
   shortDesc: string | null;
   categoryId: string | null;
-  active: boolean;
+  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   featured: boolean;
   metaTitle: string | null;
   metaDescription: string | null;
