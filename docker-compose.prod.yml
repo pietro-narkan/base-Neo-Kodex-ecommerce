@@ -73,6 +73,10 @@ services:
       REFRESH_SECRET: ${REFRESH_SECRET:?required}
       REFRESH_EXPIRES_IN: ${REFRESH_EXPIRES_IN:-30d}
       CORS_ORIGIN: "${SERVICE_URL_ADMIN},${SERVICE_URL_STOREFRONT}"
+      # URLs públicas — usadas por Webpay para armar returnUrl y redirigir
+      # al storefront después del pago. Coolify las inyecta via magic vars.
+      API_PUBLIC_URL: "${SERVICE_URL_API}"
+      STOREFRONT_URL: "${SERVICE_URL_STOREFRONT}"
       MINIO_ENDPOINT: minio
       MINIO_PORT: "9000"
       MINIO_USE_SSL: "false"
