@@ -278,6 +278,11 @@ export class OrdersService {
       html: this.buildOrderCreatedHtml(order, paymentInstructions),
     });
 
+    // Admin notification (best-effort, skippea si no hay store.contact_email seteado)
+    await this.sendAdminNewOrderEmail(order).catch((err) =>
+      this.logger.warn(`Admin notification falló: ${(err as Error).message}`),
+    );
+
     return { ...order, paymentInstructions };
   }
 
@@ -684,13 +689,29 @@ export class OrdersService {
       await this.onOrderPaid(updated);
       return this.getByIdAdmin(id);
     }
-    if (status === 'REFUNDED' && wasPaid && current.paymentReference) {
-      try {
-        await this.payment.refund(current.paymentReference);
-      } catch (err) {
-        this.logger.error(
-          `Refund falló para orden ${current.orderNumber}: ${(err as Error).message}`,
-        );
+    // Status transition hooks (best-effort: email failures don't break the tx).
+    if (status === 'FULFILLED' && current.status !== 'FULFILLED') {
+      await this.sendOrderFulfilledEmail(updated).catch((err) =>
+        this.logger.warn(`Fulfilled email falló: ${(err as Error).message}`),
+      );
+    }
+    if (status === 'CANCELLED' && current.status !== 'CANCELLED') {
+      await this.sendOrderCancelledEmail(updated).catch((err) =>
+        this.logger.warn(`Cancelled email falló: ${(err as Error).message}`),
+      );
+    }
+    if (status === 'REFUNDED' && current.status !== 'REFUNDED') {
+      await this.sendOrderRefundedEmail(updated).catch((err) =>
+        this.logger.warn(`Refunded email falló: ${(err as Error).message}`),
+      );
+      if (wasPaid && current.paymentReference) {
+        try {
+          await this.payment.refund(current.paymentReference);
+        } catch (err) {
+          this.logger.error(
+            `Refund falló para orden ${current.orderNumber}: ${(err as Error).message}`,
+          );
+        }
       }
     }
     return updated;
@@ -830,6 +851,140 @@ ${instructionsBlock}
 <p><strong>Total pagado: $${formatCLP(order.total)}</strong></p>
 <p>Estamos preparando tu envío.</p>
     `.trim();
+  }
+
+  private async sendOrderFulfilledEmail(order: OrderWithRelations): Promise<void> {
+    const trackingBlock = order.trackingNumber
+      ? `Código de seguimiento: ${order.trackingNumber}${order.shippingProvider ? ` (${order.shippingProvider})` : ''}`
+      : '';
+    const trackingHtml = order.trackingNumber
+      ? `<p><strong>Código de seguimiento:</strong> ${order.trackingNumber}${order.shippingProvider ? ` <em>(${order.shippingProvider})</em>` : ''}</p>`
+      : '';
+    await this.email.send({
+      to: order.email,
+      subject: `Tu pedido fue despachado — ${order.orderNumber}`,
+      text: [
+        `¡Hola ${order.firstName}! Despachamos tu orden ${order.orderNumber}.`,
+        '',
+        'Items enviados:',
+        this.itemsText(order),
+        '',
+        trackingBlock,
+        '',
+        'Gracias por tu compra.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      html: `
+<h2>Tu pedido está en camino 🚚</h2>
+<p>Hola <strong>${order.firstName}</strong>, despachamos tu orden <strong>${order.orderNumber}</strong>.</p>
+<ul>${this.itemsHtml(order)}</ul>
+${trackingHtml}
+<p>Gracias por tu compra.</p>
+      `.trim(),
+    });
+  }
+
+  private async sendOrderCancelledEmail(order: OrderWithRelations): Promise<void> {
+    await this.email.send({
+      to: order.email,
+      subject: `Orden cancelada — ${order.orderNumber}`,
+      text: [
+        `Hola ${order.firstName},`,
+        '',
+        `Tu orden ${order.orderNumber} fue cancelada.`,
+        '',
+        'Items:',
+        this.itemsText(order),
+        '',
+        `Total: $${formatCLP(order.total)}`,
+        '',
+        order.paymentStatus === 'PAID'
+          ? 'Si ya habías pagado, procesaremos el reembolso en las próximas 72 horas hábiles.'
+          : 'Si tenés dudas, respondé este email.',
+      ].join('\n'),
+      html: `
+<h2>Orden cancelada</h2>
+<p>Hola <strong>${order.firstName}</strong>, tu orden <strong>${order.orderNumber}</strong> fue cancelada.</p>
+<ul>${this.itemsHtml(order)}</ul>
+<p><strong>Total:</strong> $${formatCLP(order.total)}</p>
+<p>${
+        order.paymentStatus === 'PAID'
+          ? 'Si ya habías pagado, procesaremos el reembolso en las próximas 72 horas hábiles.'
+          : 'Si tenés dudas, respondé este email.'
+      }</p>
+      `.trim(),
+    });
+  }
+
+  private async sendOrderRefundedEmail(order: OrderWithRelations): Promise<void> {
+    await this.email.send({
+      to: order.email,
+      subject: `Reembolso procesado — ${order.orderNumber}`,
+      text: [
+        `Hola ${order.firstName},`,
+        '',
+        `Procesamos el reembolso de tu orden ${order.orderNumber}.`,
+        '',
+        `Monto reembolsado: $${formatCLP(order.total)}`,
+        '',
+        'El dinero puede tardar entre 3 y 10 días hábiles en aparecer en tu medio de pago.',
+      ].join('\n'),
+      html: `
+<h2>Reembolso procesado</h2>
+<p>Hola <strong>${order.firstName}</strong>, procesamos el reembolso de tu orden <strong>${order.orderNumber}</strong>.</p>
+<p><strong>Monto reembolsado:</strong> $${formatCLP(order.total)}</p>
+<p>El dinero puede tardar entre 3 y 10 días hábiles en aparecer en tu medio de pago.</p>
+      `.trim(),
+    });
+  }
+
+  /**
+   * Reads store.contact_email from Setting. Used for admin alerts.
+   * Returns null if unset so callers can skip the email.
+   */
+  private async getAdminNotificationEmail(): Promise<string | null> {
+    const setting = await this.prisma.setting.findUnique({
+      where: { key: 'store.contact_email' },
+    });
+    const value = setting?.value;
+    return typeof value === 'string' && value.includes('@') ? value : null;
+  }
+
+  private async sendAdminNewOrderEmail(order: OrderWithRelations): Promise<void> {
+    const to = await this.getAdminNotificationEmail();
+    if (!to) return; // admin email not configured, skip silently
+    await this.email.send({
+      to,
+      subject: `[Admin] Nueva orden ${order.orderNumber} — $${formatCLP(order.total)}`,
+      text: [
+        `Nueva orden ${order.orderNumber} recibida.`,
+        '',
+        `Cliente: ${order.firstName} ${order.lastName} (${order.email})`,
+        `Teléfono: ${order.phone ?? '—'}`,
+        '',
+        'Items:',
+        this.itemsText(order),
+        '',
+        `Subtotal: $${formatCLP(order.subtotalGross)}`,
+        `Envío:    $${formatCLP(order.shippingAmount)}`,
+        `Total:    $${formatCLP(order.total)}`,
+        `Estado de pago: ${order.paymentStatus}`,
+      ].join('\n'),
+      html: `
+<h2>Nueva orden recibida</h2>
+<p><strong>${order.orderNumber}</strong> — <strong>$${formatCLP(order.total)}</strong></p>
+<p>Cliente: <strong>${order.firstName} ${order.lastName}</strong> (${order.email})<br>
+Teléfono: ${order.phone ?? '—'}</p>
+<ul>${this.itemsHtml(order)}</ul>
+<table>
+  <tr><td>Subtotal</td><td>$${formatCLP(order.subtotalGross)}</td></tr>
+  <tr><td>Envío</td><td>$${formatCLP(order.shippingAmount)}</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>$${formatCLP(order.total)}</strong></td></tr>
+</table>
+<p>Pago: <strong>${order.paymentStatus}</strong></p>
+      `.trim(),
+    });
   }
 
   // ===== Helpers =====
