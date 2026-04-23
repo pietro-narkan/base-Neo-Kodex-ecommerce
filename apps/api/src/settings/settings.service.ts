@@ -17,6 +17,7 @@ export const KNOWN_SETTINGS = [
   { key: 'store.shipping_free_threshold', label: 'Umbral envío gratis (CLP)', type: 'number', group: 'Envíos' },
   { key: 'store.bank_details', label: 'Datos bancarios para transferencia', type: 'text', group: 'Pagos' },
   { key: 'store.email_from', label: 'Remitente de emails', type: 'email', group: 'Emails' },
+  { key: 'trash.product_retention_days', label: 'Días en papelera antes del borrado definitivo (0 = nunca)', type: 'number', group: 'Papelera' },
 ] as const;
 
 export type KnownSettingKey = (typeof KNOWN_SETTINGS)[number]['key'];

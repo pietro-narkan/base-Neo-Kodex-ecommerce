@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AdminsModule } from './admins/admins.module';
 import { AppController } from './app.controller';
@@ -30,6 +31,7 @@ import { VariantsModule } from './variants/variants.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     StorageModule,
     ProvidersModule,

@@ -302,6 +302,152 @@ export class ProductsService {
     return { ok: true };
   }
 
+  async listTrash(params: { page?: number; limit?: number } = {}) {
+    const page = params.page ?? 1;
+    const limit = Math.min(params.limit ?? 50, 200);
+    const where: Prisma.ProductWhereInput = { deletedAt: { not: null } };
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { deletedAt: 'desc' },
+        include: adminInclude,
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /**
+   * Hard delete. Cascades to Variants → sets OrderItem.variantId = null via
+   * onDelete: SetNull (snapshot stays intact). Use only on soft-deleted rows.
+   */
+  async purge(id: string, actor?: { id: string; email: string }) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: adminInclude,
+    });
+    if (!product) throw new NotFoundException('Producto no encontrado');
+    if (!product.deletedAt) {
+      throw new BadRequestException(
+        'Solo se pueden purgar productos soft-deleted. Primero enviar a papelera.',
+      );
+    }
+    await this.prisma.product.delete({ where: { id } });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'delete.hard',
+        entityType: 'product',
+        entityId: id,
+        before: { name: product.name, slug: product.slug },
+      });
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Hard-delete all soft-deleted products. Used both by the manual "Vaciar papelera"
+   * button and by the retention cron (from ProductsTrashService).
+   */
+  async purgeAllTrash(
+    actor?: { id: string; email: string },
+    olderThanDate?: Date,
+  ): Promise<{ count: number }> {
+    const where: Prisma.ProductWhereInput = {
+      deletedAt: olderThanDate
+        ? { not: null, lte: olderThanDate }
+        : { not: null },
+    };
+    const ids = await this.prisma.product.findMany({
+      where,
+      select: { id: true, name: true },
+    });
+    if (ids.length === 0) return { count: 0 };
+    const result = await this.prisma.product.deleteMany({ where });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorEmail: actor.email,
+        action: 'delete.hard.bulk',
+        entityType: 'product',
+        metadata: {
+          count: result.count,
+          olderThan: olderThanDate?.toISOString(),
+          ids: ids.map((p) => p.id),
+        },
+      });
+    }
+    return { count: result.count };
+  }
+
+  /** Bulk change status for many products at once. */
+  async bulkUpdateStatus(
+    ids: string[],
+    status: ProductStatus,
+    actor: { id: string; email: string },
+  ): Promise<{ count: number }> {
+    if (ids.length === 0) return { count: 0 };
+    const result = await this.prisma.product.updateMany({
+      where: { id: { in: ids }, deletedAt: null },
+      data: { status, active: status === 'ACTIVE' },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'bulk.status',
+      entityType: 'product',
+      metadata: { count: result.count, status, ids },
+    });
+    return { count: result.count };
+  }
+
+  /** Bulk soft-delete. Moves products to the trash. */
+  async bulkSoftDelete(
+    ids: string[],
+    actor: { id: string; email: string },
+  ): Promise<{ count: number }> {
+    if (ids.length === 0) return { count: 0 };
+    const result = await this.prisma.product.updateMany({
+      where: { id: { in: ids }, deletedAt: null },
+      data: {
+        deletedAt: new Date(),
+        status: 'ARCHIVED',
+        active: false,
+      },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'bulk.delete.soft',
+      entityType: 'product',
+      metadata: { count: result.count, ids },
+    });
+    return { count: result.count };
+  }
+
+  /** Bulk restore: undo soft-delete for multiple products. */
+  async bulkRestore(
+    ids: string[],
+    actor: { id: string; email: string },
+  ): Promise<{ count: number }> {
+    if (ids.length === 0) return { count: 0 };
+    const result = await this.prisma.product.updateMany({
+      where: { id: { in: ids }, deletedAt: { not: null } },
+      data: { deletedAt: null },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      action: 'bulk.restore',
+      entityType: 'product',
+      metadata: { count: result.count, ids },
+    });
+    return { count: result.count };
+  }
+
   /** Restore a soft-deleted product back to ARCHIVED (admin can re-activate after). */
   async restore(id: string, actor?: { id: string; email: string }) {
     const product = await this.getByIdAdmin(id);

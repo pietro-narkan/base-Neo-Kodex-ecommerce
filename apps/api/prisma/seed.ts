@@ -37,6 +37,9 @@ async function main() {
     { key: 'store.shipping_flat_rate', value: 3990 },
     { key: 'store.shipping_free_threshold', value: 50000 },
     { key: 'store.email_from', value: 'no-reply@neo-kodex.local' },
+    // Papelera: días que un producto permanece en trash antes del hard-delete
+    // automático. 0 o negativo deshabilita el cron.
+    { key: 'trash.product_retention_days', value: 30 },
   ];
   for (const s of settings) {
     await prisma.setting.upsert({
