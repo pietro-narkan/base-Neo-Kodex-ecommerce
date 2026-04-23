@@ -94,12 +94,14 @@ services:
       dockerfile: apps/admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: "${SERVICE_URL_API}/api"
+        NEXT_PUBLIC_MINIO_URL: "${SERVICE_URL_MINIO}"
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: "${SERVICE_URL_API}/api"
+      NEXT_PUBLIC_MINIO_URL: "${SERVICE_URL_MINIO}"
     ports:
       - "3000"
 
@@ -109,12 +111,14 @@ services:
       dockerfile: apps/storefront/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: "${SERVICE_URL_API}/api"
+        NEXT_PUBLIC_MINIO_URL: "${SERVICE_URL_MINIO}"
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: "${SERVICE_URL_API}/api"
+      NEXT_PUBLIC_MINIO_URL: "${SERVICE_URL_MINIO}"
     ports:
       - "3002"
 
