@@ -10,6 +10,8 @@ import { ApiError, apiGet } from '@/lib/api';
 import { useCart } from '@/lib/cart';
 import { cn, formatCLP } from '@/lib/utils';
 
+import { ReviewsSection } from './reviews-section';
+
 interface AttributeValue {
   id: string;
   value: string;
@@ -359,6 +361,8 @@ export function ProductView({ slug }: { slug: string }) {
           )}
         </div>
       </div>
+
+      <ReviewsSection productId={product.id} />
     </div>
   );
 }
