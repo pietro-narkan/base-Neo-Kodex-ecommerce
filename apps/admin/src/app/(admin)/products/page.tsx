@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -14,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { apiDelete, apiGet } from '@/lib/api';
+import { apiDelete, apiGet, apiPost } from '@/lib/api';
 import { cn, formatCLP } from '@/lib/utils';
 
 interface Variant {
@@ -65,6 +66,9 @@ function totalStock(variants: Variant[]): number {
 export default function ProductsListPage() {
   const [data, setData] = useState<Product[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<ProductStatus | ''>('');
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -73,6 +77,7 @@ export default function ProductsListPage() {
         '/admin/products?limit=100',
       );
       setData(res.data);
+      setSelected(new Set());
     } catch (err) {
       setError((err as Error).message);
     }
@@ -82,8 +87,26 @@ export default function ProductsListPage() {
     load();
   }, [load]);
 
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (!data) return;
+    if (selected.size === data.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(data.map((p) => p.id)));
+    }
+  }
+
   async function handleDelete(id: string, name: string) {
-    if (!window.confirm(`¿Eliminar "${name}"? Esto borra también sus variantes.`)) return;
+    if (!window.confirm(`¿Enviar "${name}" a la papelera? Se puede restaurar desde /products/trash.`)) return;
     try {
       await apiDelete(`/admin/products/${id}`);
       load();
@@ -91,6 +114,41 @@ export default function ProductsListPage() {
       alert((err as Error).message);
     }
   }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`¿Enviar ${ids.length} producto(s) a la papelera?`)) return;
+    setBulkRunning(true);
+    try {
+      await apiPost('/admin/products/bulk', { ids, action: 'delete' });
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBulkRunning(false);
+    }
+  }
+
+  async function handleBulkSetStatus() {
+    const ids = Array.from(selected);
+    if (ids.length === 0 || !bulkStatus) return;
+    setBulkRunning(true);
+    try {
+      await apiPost('/admin/products/bulk', {
+        ids,
+        action: 'setStatus',
+        status: bulkStatus,
+      });
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBulkRunning(false);
+    }
+  }
+
+  const allSelected = data !== null && data.length > 0 && selected.size === data.length;
 
   return (
     <div className="space-y-6">
@@ -102,6 +160,13 @@ export default function ProductsListPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link
+            href="/products/trash"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            <Trash2 className="size-4" />
+            Papelera
+          </Link>
           <Link
             href="/products/import"
             className={cn(buttonVariants({ variant: 'outline' }))}
@@ -122,6 +187,50 @@ export default function ProductsListPage() {
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 rounded-md border bg-primary/5 px-4 py-3">
+          <span className="text-sm font-medium">
+            {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+          </span>
+          <div className="h-4 w-px bg-border" />
+          <Select
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value as ProductStatus | '')}
+            className="w-48"
+          >
+            <option value="">Cambiar estado a…</option>
+            <option value="DRAFT">Borrador</option>
+            <option value="ACTIVE">Activo</option>
+            <option value="ARCHIVED">Archivado</option>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!bulkStatus || bulkRunning}
+            onClick={handleBulkSetStatus}
+          >
+            Aplicar estado
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={bulkRunning}
+            onClick={handleBulkDelete}
+          >
+            {bulkRunning && <Loader2 className="size-4 animate-spin" />}
+            <Trash2 className="size-4" />
+            Enviar a papelera
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelected(new Set())}
+          >
+            Deseleccionar
+          </Button>
+        </div>
+      )}
+
       {data === null ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="animate-spin text-muted-foreground" />
@@ -135,6 +244,15 @@ export default function ProductsListPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    className="size-4"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="Seleccionar todos"
+                  />
+                </TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>Categoría</TableHead>
                 <TableHead>Variantes</TableHead>
@@ -146,7 +264,16 @@ export default function ProductsListPage() {
             </TableHeader>
             <TableBody>
               {data.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow key={p.id} data-state={selected.has(p.id) ? 'selected' : undefined}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      className="size-4"
+                      checked={selected.has(p.id)}
+                      onChange={() => toggleOne(p.id)}
+                      aria-label={`Seleccionar ${p.name}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{p.name}</span>
@@ -191,7 +318,7 @@ export default function ProductsListPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDelete(p.id, p.name)}
-                      aria-label="Eliminar"
+                      aria-label="Enviar a papelera"
                     >
                       <Trash2 className="size-4" />
                     </Button>
