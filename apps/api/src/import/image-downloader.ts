@@ -2,6 +2,7 @@ import { extname } from 'node:path';
 
 import { Logger } from '@nestjs/common';
 
+import { processImage } from '../media/image-processor';
 import type { StorageService } from '../storage/storage.service';
 
 export interface DownloadedImage {
@@ -105,10 +106,19 @@ export class ImageDownloader {
 
       const ext = extFromUrlOrContentType(url, contentType);
       const filename = `import${ext}`;
-      const uploaded = await this.storage.uploadBuffer(
+
+      // Optimizamos antes de subir (resize + WebP + EXIF strip). Si falla,
+      // processImage devuelve el buffer original.
+      const processed = await processImage(
         buf,
         filename,
         contentType || 'application/octet-stream',
+      );
+
+      const uploaded = await this.storage.uploadBuffer(
+        processed.buffer,
+        processed.filename,
+        processed.mimetype,
         'imports',
       );
 
@@ -116,7 +126,7 @@ export class ImageDownloader {
         url: uploaded.url,
         key: uploaded.key,
         sourceUrl,
-        contentType: contentType || 'application/octet-stream',
+        contentType: processed.mimetype,
       };
     } finally {
       clearTimeout(timeout);

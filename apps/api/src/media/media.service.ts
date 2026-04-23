@@ -1,11 +1,13 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { processImage } from './image-processor';
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -29,6 +31,8 @@ interface UploadParams {
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -63,10 +67,24 @@ export class MediaService {
       }
     }
 
-    const { key, url } = await this.storage.uploadBuffer(
+    // Optimizamos antes de subir: resize + WebP + strip EXIF. Fallback al original si sharp falla.
+    const processed = await processImage(
       params.buffer,
       params.filename,
       params.mimetype,
+    );
+    const saved = processed.buffer.length;
+    const original = params.buffer.length;
+    if (saved < original) {
+      this.logger.log(
+        `Imagen optimizada: ${(original / 1024).toFixed(0)}KB → ${(saved / 1024).toFixed(0)}KB (-${Math.round((1 - saved / original) * 100)}%)`,
+      );
+    }
+
+    const { key, url } = await this.storage.uploadBuffer(
+      processed.buffer,
+      processed.filename,
+      processed.mimetype,
     );
 
     return this.prisma.media.create({
