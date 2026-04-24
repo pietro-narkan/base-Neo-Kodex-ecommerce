@@ -21,6 +21,10 @@ const apiOrigin = originOf(API_URL);
 const minioOrigin = originOf(MINIO_URL);
 
 const isDev = process.env.NODE_ENV !== 'production';
+// Dominios oficiales de Transbank a los que el storefront debe poder hacer
+// submit del form de pago (token_ws). webpay3gint = integración, webpay3g = prod.
+const TRANSBANK_FORM_TARGETS =
+  'https://webpay3gint.transbank.cl https://webpay3g.transbank.cl';
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
@@ -30,7 +34,7 @@ const csp = [
   "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  `form-action 'self' ${TRANSBANK_FORM_TARGETS}`,
   "frame-ancestors 'none'",
 ]
   .filter(Boolean)
