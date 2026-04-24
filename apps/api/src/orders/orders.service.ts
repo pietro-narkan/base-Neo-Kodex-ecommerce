@@ -260,15 +260,37 @@ export class OrdersService {
       | { url: string; method: 'POST' | 'GET'; params: Record<string, string> }
       | undefined;
     try {
-      const providerId = await this.payment.getActiveProviderId();
-      const paymentResult = await this.payment.init({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        total: order.total,
-        email: order.email,
-        firstName: order.firstName,
-        lastName: order.lastName,
-      });
+      // Resolver el provider a usar:
+      //   1. lo que el cliente eligió en el checkout (dto.paymentMethod)
+      //   2. si no, el primer habilitado (default)
+      // Validamos que el elegido esté en la lista habilitada — si no, es un
+      // intento de bypass del selector.
+      const enabled = await this.payment.getEnabledProviderIds();
+      if (enabled.length === 0) {
+        throw new BadRequestException(
+          'No hay métodos de pago habilitados. Configurá uno en /admin/payments.',
+        );
+      }
+      let providerId: (typeof enabled)[number] | undefined = params.dto
+        .paymentMethod as (typeof enabled)[number] | undefined;
+      if (providerId && !enabled.includes(providerId)) {
+        throw new BadRequestException(
+          `El método de pago "${providerId}" no está habilitado.`,
+        );
+      }
+      if (!providerId) providerId = enabled[0];
+
+      const paymentResult = await this.payment.init(
+        {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          total: order.total,
+          email: order.email,
+          firstName: order.firstName,
+          lastName: order.lastName,
+        },
+        providerId,
+      );
       paymentInstructions = paymentResult.instructions;
       paymentRedirect = paymentResult.redirect;
       await this.prisma.order.update({
@@ -282,6 +304,7 @@ export class OrdersService {
       this.logger.error(
         `Payment init falló para orden ${order.orderNumber}: ${(err as Error).message}`,
       );
+      if (err instanceof BadRequestException) throw err;
     }
 
     // Email "orden recibida" con instrucciones de pago (best-effort, no tira errores)

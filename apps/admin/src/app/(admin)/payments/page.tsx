@@ -5,7 +5,6 @@ import {
   Check,
   CreditCard,
   Loader2,
-  Power,
   Save,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -18,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { api, apiGet } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 type ProviderId = 'manual' | 'webpay' | 'mercadopago' | 'flow';
 
@@ -38,7 +38,7 @@ interface PaymentMethod {
 }
 
 interface Response {
-  activeProvider: ProviderId;
+  enabledProviders: ProviderId[];
   methods: PaymentMethod[];
 }
 
@@ -55,7 +55,7 @@ export default function PaymentsPage() {
   const [webpayCommerceCode, setWebpayCommerceCode] = useState('');
   const [webpayApiKey, setWebpayApiKey] = useState('');
   const [savingWebpay, setSavingWebpay] = useState(false);
-  const [activating, setActivating] = useState<ProviderId | null>(null);
+  const [togglingId, setTogglingId] = useState<ProviderId | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -123,29 +123,29 @@ export default function PaymentsPage() {
     }
   }
 
-  async function activate(provider: ProviderId) {
-    if (
-      !confirm(
-        `¿Activar "${provider}" como método de pago? Todos los nuevos checkouts usarán esta pasarela.`,
-      )
-    ) {
-      return;
-    }
-    setActivating(provider);
+  async function toggleMethod(provider: ProviderId, wasActive: boolean) {
+    if (!data) return;
+    setTogglingId(provider);
     setError(null);
     setNotice(null);
     try {
-      await api('/admin/payments/active', {
+      const current = data.enabledProviders.filter((p) => p !== provider);
+      const next = wasActive ? current : [...current, provider];
+      await api('/admin/payments/enabled', {
         method: 'PUT',
-        body: { provider },
+        body: { providers: next },
       });
-      setNotice(`Método activo: ${provider}`);
+      setNotice(
+        wasActive
+          ? `"${provider}" desactivado.`
+          : `"${provider}" activado — el cliente ya puede elegirlo en el checkout.`,
+      );
       setTimeout(() => setNotice(null), 3000);
       await load();
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setActivating(null);
+      setTogglingId(null);
     }
   }
 
@@ -162,11 +162,27 @@ export default function PaymentsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Métodos de pago</h1>
         <p className="text-sm text-muted-foreground">
-          Método activo actualmente:{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
-            {data.activeProvider}
-          </code>
-          . Podés cambiarlo desde acá sin reiniciar el servidor.
+          Podés habilitar varios métodos al mismo tiempo — el cliente elige uno
+          antes de confirmar la compra.{' '}
+          {data.enabledProviders.length > 0 ? (
+            <>
+              Activos:{' '}
+              {data.enabledProviders.map((p, i) => (
+                <span key={p}>
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+                    {p}
+                  </code>
+                  {i < data.enabledProviders.length - 1 && ', '}
+                </span>
+              ))}
+              .
+            </>
+          ) : (
+            <span className="text-destructive">
+              Ningún método habilitado — ningún cliente va a poder completar un
+              checkout hasta que actives al menos uno.
+            </span>
+          )}
         </p>
       </div>
 
@@ -193,40 +209,53 @@ export default function PaymentsPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <CreditCard className="size-5 text-muted-foreground" />
                 <span>{m.name}</span>
-                {m.active && <Badge variant="success">Activo</Badge>}
                 {!m.available && <Badge variant="secondary">No integrado</Badge>}
-                {m.available && !m.active && (
-                  <Badge variant="secondary">Inactivo</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
                 {m.available && m.configured && (
                   <Badge variant="outline">Configurado</Badge>
                 )}
                 {m.available && !m.configured && (
                   <Badge variant="warning">Falta configurar</Badge>
                 )}
-                {m.available && !m.active && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={activating !== null || !m.configured}
-                    onClick={() => activate(m.id)}
-                    title={
-                      m.configured
-                        ? 'Activar este método'
-                        : 'Primero completá la configuración'
-                    }
-                  >
-                    {activating === m.id ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Power className="size-4" />
-                    )}
-                    Activar
-                  </Button>
-                )}
               </div>
+              {m.available && (
+                <label
+                  className={cn(
+                    'flex items-center gap-2 select-none',
+                    (!m.configured || togglingId === m.id) &&
+                      'opacity-60 cursor-not-allowed',
+                  )}
+                  title={
+                    m.configured
+                      ? 'Habilitar/deshabilitar este método'
+                      : 'Primero completá la configuración'
+                  }
+                >
+                  <span className="text-sm font-medium">
+                    {m.active ? 'Activo' : 'Inactivo'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={m.active}
+                    disabled={!m.configured || togglingId !== null}
+                    onClick={() => toggleMethod(m.id, m.active)}
+                    className={cn(
+                      'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors',
+                      m.active ? 'bg-primary' : 'bg-muted',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 size-4 rounded-full bg-background shadow transition-transform',
+                        m.active ? 'translate-x-[18px]' : 'translate-x-0.5',
+                      )}
+                    />
+                  </button>
+                  {togglingId === m.id && (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  )}
+                </label>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -359,10 +388,10 @@ export default function PaymentsPage() {
       <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p className="font-medium text-foreground mb-1">¿Cómo funciona?</p>
         <p>
-          Solo un método está activo a la vez. Al tocar <strong>Activar</strong>{' '}
-          en cualquier provider configurado, todos los checkouts nuevos lo van
-          a usar. Las órdenes viejas conservan el provider con el que fueron
-          pagadas (relevante para reembolsos).
+          Podés tener <strong>varios métodos activos a la vez</strong> — el
+          cliente ve los que actives en el checkout y elige uno antes de
+          confirmar. Las órdenes viejas conservan el método con el que fueron
+          pagadas (importante para reembolsos).
         </p>
       </div>
     </div>

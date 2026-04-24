@@ -111,7 +111,8 @@ class ManualPaymentProvider implements PaymentProvider {
 // Service — dispatch al provider activo (elegido en DB o env var)
 // ============================================================
 
-const ACTIVE_PROVIDER_SETTING_KEY = 'payment.active_provider';
+const ENABLED_PROVIDERS_KEY = 'payment.enabled_providers';
+const LEGACY_ACTIVE_PROVIDER_KEY = 'payment.active_provider';
 
 @Injectable()
 export class PaymentService {
@@ -127,21 +128,52 @@ export class PaymentService {
   }
 
   /**
-   * Provider activo — lee el setting payment.active_provider (DB) y cae al
-   * env var PAYMENT_PROVIDER como fallback. Permite switchear desde el admin
-   * sin reiniciar el API.
+   * IDs de providers habilitados — lee el setting payment.enabled_providers
+   * (array JSON) que el admin gestiona desde /admin/payments. Con back-compat:
+   *
+   *   1. si existe payment.enabled_providers (array) → se usa ese
+   *   2. si existe payment.active_provider (string, modelo viejo single-choice)
+   *      → se devuelve como array de 1 elemento
+   *   3. si no hay nada en DB → se cae al env var PAYMENT_PROVIDER (default "manual")
+   *
+   * El orden del array define también la preferencia: el primero es el
+   * "default" que se auto-selecciona si el cliente no elige uno.
    */
-  async getActiveProviderId(): Promise<ProviderId> {
-    const row = await this.prisma.setting.findUnique({
-      where: { key: ACTIVE_PROVIDER_SETTING_KEY },
+  async getEnabledProviderIds(): Promise<ProviderId[]> {
+    const rows = await this.prisma.setting.findMany({
+      where: {
+        key: { in: [ENABLED_PROVIDERS_KEY, LEGACY_ACTIVE_PROVIDER_KEY] },
+      },
     });
-    const fromDb =
-      typeof row?.value === 'string' ? (row.value as ProviderId) : null;
-    if (fromDb && this.isKnownProvider(fromDb)) return fromDb;
+    const byKey = new Map(rows.map((r) => [r.key, r.value]));
+
+    const enabled = byKey.get(ENABLED_PROVIDERS_KEY);
+    if (Array.isArray(enabled)) {
+      const valid = enabled.filter(
+        (id): id is ProviderId =>
+          typeof id === 'string' && this.isKnownProvider(id),
+      );
+      if (valid.length > 0) return valid;
+    }
+
+    const legacy = byKey.get(LEGACY_ACTIVE_PROVIDER_KEY);
+    if (typeof legacy === 'string' && this.isKnownProvider(legacy)) {
+      return [legacy];
+    }
+
     const fromEnv = this.config.get<string>('PAYMENT_PROVIDER') ?? 'manual';
     return this.isKnownProvider(fromEnv as ProviderId)
-      ? (fromEnv as ProviderId)
-      : 'manual';
+      ? [fromEnv as ProviderId]
+      : ['manual'];
+  }
+
+  /**
+   * Back-compat: devuelve el primer provider habilitado. Se usa en lugares
+   * que seteaban `paymentProvider` en la orden cuando el cliente no eligió.
+   */
+  async getActiveProviderId(): Promise<ProviderId> {
+    const ids = await this.getEnabledProviderIds();
+    return ids[0] ?? 'manual';
   }
 
   /** Resuelve una instancia del provider por id. Solo manual y webpay hoy. */
@@ -166,8 +198,12 @@ export class PaymentService {
     return this.config.get<string>('PAYMENT_PROVIDER') ?? 'manual';
   }
 
-  async init(params: PaymentInitParams): Promise<PaymentInitResult> {
-    const provider = await this.getActiveProvider();
+  async init(
+    params: PaymentInitParams,
+    providerId?: ProviderId,
+  ): Promise<PaymentInitResult> {
+    const id = providerId ?? (await this.getActiveProviderId());
+    const provider = this.getProvider(id);
     return provider.init(params);
   }
 
@@ -210,25 +246,42 @@ export class PaymentService {
     return provider.commit(token);
   }
 
-  async setActiveProvider(
-    id: ProviderId,
+  /**
+   * Setea la lista completa de providers habilitados. Acepta vacío (ningún
+   * método activo → el checkout va a fallar, pero lo dejamos para que el
+   * admin pueda apagar todo intencionalmente).
+   */
+  async setEnabledProviders(
+    ids: ProviderId[],
     actor: { id: string; email: string },
-  ): Promise<ProviderId> {
-    if (!this.isKnownProvider(id)) {
-      throw new Error(`Provider desconocido: ${id}`);
-    }
-    if (id !== 'manual' && id !== 'webpay') {
-      throw new Error(`Provider no disponible todavía: ${id}`);
+  ): Promise<ProviderId[]> {
+    const seen = new Set<ProviderId>();
+    const clean: ProviderId[] = [];
+    for (const id of ids) {
+      if (!this.isKnownProvider(id)) {
+        throw new Error(`Provider desconocido: ${id}`);
+      }
+      if (id !== 'manual' && id !== 'webpay') {
+        throw new Error(`Provider no disponible todavía: ${id}`);
+      }
+      if (seen.has(id)) continue;
+      seen.add(id);
+      clean.push(id);
     }
     await this.prisma.setting.upsert({
-      where: { key: ACTIVE_PROVIDER_SETTING_KEY },
-      update: { value: id },
-      create: { key: ACTIVE_PROVIDER_SETTING_KEY, value: id },
+      where: { key: ENABLED_PROVIDERS_KEY },
+      update: { value: clean },
+      create: { key: ENABLED_PROVIDERS_KEY, value: clean },
     });
+    // Limpieza del setting legacy — una vez migrados al modelo nuevo no
+    // queremos que quede dando vueltas y arme confusión.
+    await this.prisma.setting
+      .delete({ where: { key: LEGACY_ACTIVE_PROVIDER_KEY } })
+      .catch(() => undefined);
     this.logger.log(
-      `Provider activo cambiado a "${id}" por ${actor.email}`,
+      `Providers habilitados: [${clean.join(', ')}] (por ${actor.email})`,
     );
-    return id;
+    return clean;
   }
 
   private isKnownProvider(id: string): id is ProviderId {

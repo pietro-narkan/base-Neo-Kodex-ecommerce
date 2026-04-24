@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { apiPost } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useCart } from '@/lib/cart';
 import { cartSessionHeader } from '@/lib/cart-session';
@@ -72,6 +72,12 @@ interface PlacedOrder {
   };
 }
 
+interface PaymentMethod {
+  id: 'manual' | 'webpay';
+  name: string;
+  description: string;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -79,6 +85,10 @@ export default function CheckoutPage() {
   const [placed, setPlaced] = useState<PlacedOrder | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[] | null>(
+    null,
+  );
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
 
   const {
     register,
@@ -95,6 +105,16 @@ export default function CheckoutPage() {
       reset((prev) => ({ ...prev, email: user.email }));
     }
   }, [user, reset]);
+
+  // Lista de métodos de pago habilitados por el admin — el cliente elige uno.
+  useEffect(() => {
+    apiGet<PaymentMethod[]>('/public/payments')
+      .then((res) => {
+        setPaymentMethods(res);
+        if (res.length > 0) setSelectedMethod(res[0].id);
+      })
+      .catch(() => setPaymentMethods([]));
+  }, []);
 
   async function onSubmit(data: FormData) {
     setError(null);
@@ -118,6 +138,7 @@ export default function CheckoutPage() {
           country: 'CL',
         },
         documentType: data.documentType,
+        paymentMethod: selectedMethod ?? undefined,
         notes: data.notes || undefined,
       };
       const order = await apiPost<PlacedOrder>(
@@ -351,6 +372,61 @@ export default function CheckoutPage() {
             </div>
           </section>
 
+          {/* Selector de método de pago. Solo se muestra si hay 2+ opciones;
+              con 1 sola se oculta (no hay nada que elegir) — se envía esa. */}
+          {paymentMethods && paymentMethods.length > 0 && (
+            <section className="space-y-4">
+              <h2 className="text-lg font-semibold">Método de pago</h2>
+              {paymentMethods.length === 1 ? (
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <div className="font-medium">{paymentMethods[0].name}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {paymentMethods[0].description}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {paymentMethods.map((method) => {
+                    const checked = selectedMethod === method.id;
+                    return (
+                      <label
+                        key={method.id}
+                        className={cn(
+                          'flex gap-3 border rounded-lg p-4 cursor-pointer transition-colors',
+                          checked
+                            ? 'border-primary bg-primary/5'
+                            : 'hover:bg-accent/40',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          value={method.id}
+                          checked={checked}
+                          onChange={() => setSelectedMethod(method.id)}
+                          className="mt-1 size-4"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-medium">{method.name}</div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {method.description}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+          {paymentMethods && paymentMethods.length === 0 && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                No hay métodos de pago disponibles. Contactá al vendedor.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -398,7 +474,13 @@ export default function CheckoutPage() {
               type="submit"
               className="w-full"
               size="lg"
-              disabled={loading}
+              disabled={
+                loading ||
+                (paymentMethods !== null && paymentMethods.length === 0) ||
+                (paymentMethods !== null &&
+                  paymentMethods.length > 0 &&
+                  !selectedMethod)
+              }
             >
               {loading && <Loader2 className="animate-spin" />}
               Confirmar orden

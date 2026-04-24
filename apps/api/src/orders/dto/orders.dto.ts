@@ -56,6 +56,11 @@ export enum DocumentTypeDto {
   FACTURA = 'FACTURA',
 }
 
+export enum PaymentMethodDto {
+  MANUAL = 'manual',
+  WEBPAY = 'webpay',
+}
+
 export enum OrderStatusDto {
   PENDING = 'PENDING',
   PAID = 'PAID',
@@ -99,6 +104,13 @@ export class CheckoutDto {
   @IsOptional()
   @IsEnum(DocumentTypeDto)
   documentType?: DocumentTypeDto;
+
+  // Método de pago elegido por el cliente. Opcional por back-compat: si no
+  // viene, el server usa el primer provider habilitado (equivalente al
+  // comportamiento anterior de single-provider).
+  @IsOptional()
+  @IsEnum(PaymentMethodDto)
+  paymentMethod?: PaymentMethodDto;
 
   @IsOptional()
   @IsString()

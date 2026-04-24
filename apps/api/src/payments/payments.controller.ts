@@ -6,9 +6,10 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { ArrayUnique, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { RequireRoles } from '../auth/decorators/roles.decorator';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -30,9 +31,11 @@ class UpdateWebpayDto {
   apiKey?: string;
 }
 
-class SetActiveProviderDto {
-  @IsIn(['manual', 'webpay', 'mercadopago', 'flow'])
-  provider!: ProviderId;
+class SetEnabledProvidersDto {
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(['manual', 'webpay', 'mercadopago', 'flow'], { each: true })
+  providers!: ProviderId[];
 }
 
 @UseGuards(AdminOnlyGuard, RolesGuard)
@@ -73,15 +76,31 @@ export class PaymentsController {
     });
   }
 
-  @Put('active')
+  @Put('enabled')
   @RequireRoles()
-  setActive(
-    @Body() dto: SetActiveProviderDto,
+  setEnabled(
+    @Body() dto: SetEnabledProvidersDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.payments.setActiveProvider(dto.provider, {
+    return this.payments.setEnabledProviders(dto.providers, {
       id: user.sub,
       email: user.email,
     });
+  }
+}
+
+/**
+ * Endpoint público para el storefront — lista los métodos habilitados y
+ * configurados para que el cliente elija uno en el checkout. No expone
+ * nada sensible (solo id, nombre y descripción).
+ */
+@Controller('public/payments')
+export class PublicPaymentsController {
+  constructor(private readonly payments: PaymentsService) {}
+
+  @Public()
+  @Get()
+  list() {
+    return this.payments.listPublicMethods();
   }
 }

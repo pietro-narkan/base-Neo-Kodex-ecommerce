@@ -58,10 +58,10 @@ export class PaymentsService {
   ) {}
 
   async listMethods(): Promise<{
-    activeProvider: ProviderId;
+    enabledProviders: ProviderId[];
     methods: PaymentMethodView[];
   }> {
-    const active = await this.payment.getActiveProviderId();
+    const enabled = new Set(await this.payment.getEnabledProviderIds());
 
     const bankDetailsRow = await this.prisma.setting.findUnique({
       where: { key: BANK_DETAILS_KEY },
@@ -90,7 +90,7 @@ export class PaymentsService {
         name: 'Transferencia bancaria',
         description:
           'El cliente ve los datos de la cuenta en el checkout y hace la transferencia manualmente. Vos confirmás el pago desde el detalle de la orden.',
-        active: active === 'manual',
+        active: enabled.has('manual'),
         configured: bankDetails.trim().length > 0,
         available: true,
         config: { bankDetails },
@@ -100,7 +100,7 @@ export class PaymentsService {
         name: 'Webpay Plus (Transbank)',
         description:
           'Pasarela oficial de Transbank para tarjetas chilenas. En integration podés probar con las credenciales públicas de Transbank; en production necesitás el contrato y tu commerce code + API key reales.',
-        active: active === 'webpay',
+        active: enabled.has('webpay'),
         configured: webpayConfigured,
         available: true,
         config: { webpay: webpayView },
@@ -110,7 +110,7 @@ export class PaymentsService {
         name: 'Mercado Pago',
         description:
           'Acepta tarjetas + transferencias + billeteras LATAM. Setup vía API keys de Mercado Pago Checkout Pro. Integración pendiente.',
-        active: active === 'mercadopago',
+        active: enabled.has('mercadopago'),
         configured: false,
         available: false,
       },
@@ -119,12 +119,30 @@ export class PaymentsService {
         name: 'Flow',
         description:
           'Alternativa a Webpay, alta aceptación en Chile. Integración pendiente.',
-        active: active === 'flow',
+        active: enabled.has('flow'),
         configured: false,
         available: false,
       },
     ];
-    return { activeProvider: active, methods };
+    return {
+      enabledProviders: Array.from(enabled),
+      methods,
+    };
+  }
+
+  /**
+   * Métodos disponibles para el cliente en el checkout. Filtra los
+   * habilitados + configurados (no tiene sentido mostrar "transferencia" si
+   * no están los datos bancarios) y devuelve solo lo que el storefront
+   * necesita para pintar el selector.
+   */
+  async listPublicMethods(): Promise<
+    Array<{ id: ProviderId; name: string; description: string }>
+  > {
+    const { methods } = await this.listMethods();
+    return methods
+      .filter((m) => m.active && m.configured && m.available)
+      .map((m) => ({ id: m.id, name: m.name, description: m.description }));
   }
 
   async updateBankDetails(
@@ -203,19 +221,21 @@ export class PaymentsService {
     return { ok: true };
   }
 
-  async setActiveProvider(
-    id: ProviderId,
+  async setEnabledProviders(
+    ids: ProviderId[],
     actor: { id: string; email: string },
   ) {
-    await this.payment.setActiveProvider(id, actor);
+    const before = await this.payment.getEnabledProviderIds();
+    const after = await this.payment.setEnabledProviders(ids, actor);
     await this.audit.log({
       actorId: actor.id,
       actorEmail: actor.email,
       action: 'update',
       entityType: 'paymentMethod',
-      entityId: 'active',
-      after: { activeProvider: id },
+      entityId: 'enabled',
+      before: { enabledProviders: before },
+      after: { enabledProviders: after },
     });
-    return { activeProvider: id };
+    return { enabledProviders: after };
   }
 }
