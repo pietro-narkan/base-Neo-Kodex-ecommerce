@@ -157,7 +157,8 @@ export class EmailTemplatesService {
     const html = renderTemplate(htmlTpl, def.mockData);
     const text = htmlToText(html);
 
-    await this.email.send({ to, subject, html, text });
+    const envelope = await this.loadEnvelope();
+    await this.email.send({ to, subject, html, text, ...envelope, tags: [id, 'test'] });
 
     await this.audit.log({
       actorId: actor.id,
@@ -205,15 +206,56 @@ export class EmailTemplatesService {
     vars: Record<string, string>,
   ): Promise<void> {
     const rendered = await this.render(id, vars);
+    const envelope = await this.loadEnvelope();
     await this.email.send({
       to,
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      ...envelope,
+      tags: [id],
     });
   }
 
   // ===== Helpers =====
+
+  /**
+   * Lee el "envelope" (from / fromName / replyTo) desde Settings editables
+   * en /admin/configuración. El cliente puede cambiarlos sin redeploy.
+   *
+   * - `store.email_from` → from-address (debe estar verificado en el panel
+   *   del provider; si falta, BrevoEmailProvider skippea el envío con un warn)
+   * - `store.email_from_name` → display name (fallback a `store.name`)
+   * - `store.contact_email` → reply-to (donde caen las respuestas del cliente)
+   */
+  private async loadEnvelope(): Promise<{
+    from?: string;
+    fromName?: string;
+    replyTo?: string;
+  }> {
+    const rows = await this.prisma.setting.findMany({
+      where: {
+        key: {
+          in: [
+            'store.email_from',
+            'store.email_from_name',
+            'store.contact_email',
+            'store.name',
+          ],
+        },
+      },
+    });
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    const str = (key: string): string | undefined => {
+      const v = map.get(key);
+      return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+    };
+    return {
+      from: str('store.email_from'),
+      fromName: str('store.email_from_name') ?? str('store.name'),
+      replyTo: str('store.contact_email'),
+    };
+  }
 
   private async loadOverride(id: string): Promise<StoredOverride | null> {
     const row = await this.prisma.setting.findUnique({

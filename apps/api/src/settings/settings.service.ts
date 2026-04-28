@@ -12,7 +12,7 @@ import { REVIEWS_SETTING_PREFIX } from '../reviews/reviews.service';
 export const KNOWN_SETTINGS = [
   { key: 'store.name', label: 'Nombre de la tienda', type: 'string', group: 'Tienda' },
   { key: 'store.description', label: 'Descripción', type: 'text', group: 'Tienda' },
-  { key: 'store.contact_email', label: 'Email de contacto', type: 'email', group: 'Tienda' },
+  { key: 'store.contact_email', label: 'Email de contacto', type: 'email', group: 'Tienda', description: 'También se usa como reply-to en los emails transaccionales.' },
   { key: 'store.currency', label: 'Moneda (ISO 4217)', type: 'string', group: 'Tienda' },
   { key: 'store.country', label: 'País (ISO 3166)', type: 'string', group: 'Tienda' },
   { key: 'store.tax_rate_bp', label: 'IVA en basis points (1900 = 19%)', type: 'number', group: 'Impuestos' },
@@ -20,7 +20,8 @@ export const KNOWN_SETTINGS = [
   { key: 'store.shipping_free_threshold', label: 'Umbral envío gratis (CLP)', type: 'number', group: 'Envíos' },
   // store.bank_details se edita en /admin/payments (se mantiene en Setting para
   // compatibilidad con el ManualPaymentProvider existente).
-  { key: 'store.email_from', label: 'Remitente de emails', type: 'email', group: 'Emails' },
+  { key: 'store.email_from', label: 'Email remitente', type: 'email', group: 'Emails', description: 'Dirección que aparece como remitente. Si usás Brevo, este email (o su dominio) debe estar verificado en el panel de Brevo (Senders & Domains); si no, los envíos fallan.' },
+  { key: 'store.email_from_name', label: 'Nombre remitente', type: 'string', group: 'Emails', description: 'Nombre visible en la bandeja del cliente. Si queda vacío se usa el nombre de la tienda.' },
   { key: 'trash.product_retention_days', label: 'Días en papelera antes del borrado definitivo (0 = nunca)', type: 'number', group: 'Papelera' },
 ] as const;
 

@@ -86,7 +86,10 @@ services:
       MINIO_PUBLIC_URL: "${SERVICE_URL_MINIO}"
       TAX_RATE_BP: "1900"
       PAYMENT_PROVIDER: manual
-      EMAIL_PROVIDER: console
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      # Solo si EMAIL_PROVIDER=brevo. El email/nombre remitente se editan en
+      # /admin/configuración (Settings store.email_from y store.email_from_name).
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
       DTE_PROVIDER: mock
       SHIPPING_PROVIDER: flat
     ports:

@@ -17,6 +17,7 @@ interface Setting {
   type: 'string' | 'text' | 'number' | 'email' | 'json';
   group: string;
   value: unknown;
+  description?: string;
 }
 
 // Serialize a setting value for the input based on its declared type.
@@ -138,6 +139,9 @@ export default function SettingsPage() {
                 <div className="space-y-1">
                   <Label htmlFor={s.key}>{s.label}</Label>
                   <p className="text-xs text-muted-foreground font-mono">{s.key}</p>
+                  {s.description && (
+                    <p className="text-xs text-muted-foreground">{s.description}</p>
+                  )}
                   {s.type === 'text' || s.type === 'json' ? (
                     <Textarea
                       id={s.key}

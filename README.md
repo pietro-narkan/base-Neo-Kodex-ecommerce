@@ -136,7 +136,7 @@ docker compose down -v
 - Switching de provider via env var `PAYMENT_PROVIDER`
 
 ### Emails transaccionales
-7 templates implementados con strategy pattern. Provider actual: `console` (loggea); swapear a **Brevo** es 1 clase nueva cuando haya dominio (ver `memory/project_email_provider_brevo.md`).
+7 templates implementados con strategy pattern. Providers disponibles: `console` (loggea, default dev), `noop` (descarta, tests) y **`brevo`** (Brevo SDK oficial). Activar Brevo en prod: `EMAIL_PROVIDER=brevo` + `BREVO_API_KEY=xkeysib-...` en Coolify. Email/nombre remitente y reply-to son editables desde `/admin/configuración` (Settings `store.email_from`, `store.email_from_name`, `store.contact_email`) — sin redeploy.
 
 - Orden recibida
 - Pago confirmado
@@ -397,7 +397,7 @@ Cuando se vaya a vender con clientes reales, estos items son obligatorios. Está
 ### Bloqueantes funcionales
 
 - [ ] **Medio de pago real** — integrar Webpay Plus, MercadoPago, Flow o Khipu. Hoy solo transferencia manual (card "No integrado" en `/admin/payments`)
-- [ ] **Email provider real** — conectar **Brevo** (preferido por el usuario; ver `memory/project_email_provider_brevo.md`). Hoy los emails se loggean pero no se envían
+- [ ] **Activar Brevo en prod** — la integración ya está mergeada. Falta: (a) verificar dominio en Brevo (DKIM/SPF/DMARC en DNS), (b) crear API key en panel Brevo → Coolify env `BREVO_API_KEY` y `EMAIL_PROVIDER=brevo`, (c) setear `store.email_from` y `store.email_from_name` en `/admin/configuración`. Mientras tanto los mails se loggean en consola.
 - [ ] **Dominio real + SSL** — comprar `.cl` (~$9k/año en NIC.cl), apuntar DNS al VPS, Coolify activa Let's Encrypt automático. Requerido para evitar aviso "Not Secure" en browser y para algunas APIs web (crypto.randomUUID)
 
 ### Hardening operacional
