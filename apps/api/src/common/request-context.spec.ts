@@ -15,7 +15,7 @@ describe('request-context', () => {
   });
 
   it('isolates context between concurrent runs', async () => {
-    const results = await Promise.all([
+    const [idOne, idTwo] = await Promise.all([
       new Promise<string | undefined>((resolve) => {
         withRequestContext({ requestId: 'one' }, () => {
           setTimeout(() => resolve(requestContext.getStore()?.requestId), 10);
@@ -27,6 +27,7 @@ describe('request-context', () => {
         });
       }),
     ]);
-    expect(results).toEqual(['one', 'two']);
+    expect(idOne).toBe('one');
+    expect(idTwo).toBe('two');
   });
 });
