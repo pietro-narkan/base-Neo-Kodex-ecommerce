@@ -12,8 +12,10 @@ import rateLimit from '@fastify/rate-limit';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
+import { initSentry } from './common/sentry';
 
 async function bootstrap() {
+  initSentry();
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({ logger: false }),
