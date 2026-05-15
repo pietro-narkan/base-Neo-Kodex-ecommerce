@@ -39,6 +39,10 @@ import { VariantsModule } from './variants/variants.module';
       envFilePath: ['.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
+    // NOTE: LoggerModule reads env vars at module init via process.env. It must
+    // come AFTER ConfigModule.forRoot() in this imports array so dotenv has
+    // already populated process.env. The empty inject:[] is intentional — pino
+    // is bootstrap-critical and we want to avoid coupling to ConfigService here.
     LoggerModule.forRootAsync({
       inject: [],
       useFactory: () => ({
@@ -51,39 +55,41 @@ import { VariantsModule } from './variants/variants.module';
                   options: { singleLine: true, translateTime: 'SYS:standard' },
                 }
               : undefined,
-          genReqId: (req) => {
-            const incoming =
-              (req.headers['x-request-id'] as string | undefined) ?? undefined;
+          genReqId: (req: { headers: Record<string, string | string[] | undefined> }) => {
+            const raw = req.headers['x-request-id'];
+            const incoming = Array.isArray(raw) ? raw[0] : raw;
             return incoming ?? randomUUID();
           },
-          customProps: (req) => ({
-            requestId: (req as { id?: string }).id,
+          // Surface requestId at the top of each log line for easy querying.
+          // pino-http's default serializer also emits req.id with the same value —
+          // duplication is intentional and documented.
+          customProps: (req: import('http').IncomingMessage & { id?: import('pino-http').ReqId }) => ({
+            requestId: req.id,
           }),
           redact: {
             paths: [
+              // Headers — emitted by pino-http default serializer
               'req.headers.authorization',
               'req.headers.cookie',
+              // Body — NOT emitted by default; these paths only activate if a
+              // controller explicitly logs `{ body }`. Future-proofing.
               'req.body.password',
               'req.body.passwordConfirm',
               'req.body.newPassword',
+              'req.body.currentPassword',
               'req.body.token',
               'req.body.refreshToken',
               'req.body.rut',
+              'req.body.apiKey',
+              // Wildcards — match anywhere in the logged tree
               '*.creditCard',
               '*.cvv',
             ],
             censor: '[REDACTED]',
           },
-          serializers: {
-            req: (req: { method: string; url: string; id?: string }) => ({
-              method: req.method,
-              url: req.url,
-              requestId: req.id,
-            }),
-            res: (res: { statusCode: number }) => ({
-              statusCode: res.statusCode,
-            }),
-          },
+          // Use pino-http's default req/res serializers (headers, method, url,
+          // statusCode, remoteAddress). They populate the fields that the redact
+          // paths above target.
         },
       }),
     }),
