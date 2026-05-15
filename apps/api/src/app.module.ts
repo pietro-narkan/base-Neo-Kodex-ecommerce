@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { randomUUID } from 'node:crypto';
+import { LoggerModule } from 'nestjs-pino';
 
 import { AdminsModule } from './admins/admins.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -37,6 +39,54 @@ import { VariantsModule } from './variants/variants.module';
       envFilePath: ['.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
+    LoggerModule.forRootAsync({
+      inject: [],
+      useFactory: () => ({
+        pinoHttp: {
+          level: process.env.LOG_LEVEL ?? 'info',
+          transport:
+            process.env.LOG_PRETTY === 'true'
+              ? {
+                  target: 'pino-pretty',
+                  options: { singleLine: true, translateTime: 'SYS:standard' },
+                }
+              : undefined,
+          genReqId: (req) => {
+            const incoming =
+              (req.headers['x-request-id'] as string | undefined) ?? undefined;
+            return incoming ?? randomUUID();
+          },
+          customProps: (req) => ({
+            requestId: (req as { id?: string }).id,
+          }),
+          redact: {
+            paths: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              'req.body.password',
+              'req.body.passwordConfirm',
+              'req.body.newPassword',
+              'req.body.token',
+              'req.body.refreshToken',
+              'req.body.rut',
+              '*.creditCard',
+              '*.cvv',
+            ],
+            censor: '[REDACTED]',
+          },
+          serializers: {
+            req: (req: { method: string; url: string; id?: string }) => ({
+              method: req.method,
+              url: req.url,
+              requestId: req.id,
+            }),
+            res: (res: { statusCode: number }) => ({
+              statusCode: res.statusCode,
+            }),
+          },
+        },
+      }),
+    }),
     PrismaModule,
     StorageModule,
     ProvidersModule,
