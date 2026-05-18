@@ -147,8 +147,14 @@ describe('Auth', () => {
           },
         });
         expect(res.statusCode).toBe(400);
-        const body = res.json() as { message: string | string[] };
-        const message = Array.isArray(body.message) ? body.message.join(' ') : body.message;
+        const body = res.json() as
+          | { message: string | string[] }
+          | { error: { message: string | string[] } };
+        const raw =
+          'error' in body && typeof body.error === 'object' && body.error !== null
+            ? (body.error as { message: string | string[] }).message
+            : (body as { message: string | string[] }).message;
+        const message = Array.isArray(raw) ? raw.join(' ') : raw;
         expect(message.toLowerCase()).toMatch(/débil|debil|weak/);
       }
     });
