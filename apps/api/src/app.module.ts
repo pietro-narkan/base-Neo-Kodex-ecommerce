@@ -31,6 +31,7 @@ import { SettingsModule } from './settings/settings.module';
 import { ShippingRatesModule } from './shipping/shipping-rates.module';
 import { StorageModule } from './storage/storage.module';
 import { VariantsModule } from './variants/variants.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import { VariantsModule } from './variants/variants.module';
     }),
     PrismaModule,
     StorageModule,
+    HealthModule,
     ProvidersModule,
     AuditModule,
     AuthModule,
