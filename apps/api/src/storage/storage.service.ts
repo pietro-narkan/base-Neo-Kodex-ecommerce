@@ -64,4 +64,13 @@ export class StorageService implements OnModuleInit {
   async deleteObject(key: string): Promise<void> {
     await this.client.removeObject(this.bucket, key);
   }
+
+  async isReachable(): Promise<boolean> {
+    try {
+      await this.client.bucketExists(this.bucket);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
