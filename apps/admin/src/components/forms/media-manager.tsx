@@ -40,7 +40,7 @@ export function MediaManager({ productId, variantId, initialMedia }: Props) {
       if (variantId) formData.append('variantId', variantId);
 
       const token = localStorage.getItem('nk_token');
-      const res = await fetch(`${API_URL}/admin/media`, {
+      const res = await fetch(`${API_URL}/v1/admin/media`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

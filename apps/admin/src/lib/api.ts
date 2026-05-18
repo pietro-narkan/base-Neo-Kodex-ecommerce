@@ -54,7 +54,7 @@ async function refreshAccessToken(): Promise<boolean> {
   const refresh = getRefreshToken();
   if (!refresh) return false;
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    const res = await fetch(`${API_URL}/v1/auth/refresh`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${refresh}` },
     });
@@ -96,7 +96,7 @@ export async function api<T = unknown>(
           ? body
           : JSON.stringify(body);
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${API_URL}/v1${path}`, {
     ...rest,
     headers,
     body: fetchBody,
