@@ -1,12 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Coupon, CouponType } from '@prisma/client';
 
 import type { PaginationDto } from '../common/dto/pagination.dto';
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   CreateCouponDto,
@@ -47,7 +44,7 @@ export class CouponsService {
       where: { code: code.toUpperCase() },
     });
     if (!coupon) {
-      throw new NotFoundException('Cupón no encontrado');
+      throw new AppException(ErrorCodes.COUPON_NOT_FOUND, 'Cupón no encontrado', 404);
     }
     return coupon;
   }
@@ -55,7 +52,7 @@ export class CouponsService {
   async getById(id: string) {
     const coupon = await this.prisma.coupon.findUnique({ where: { id } });
     if (!coupon) {
-      throw new NotFoundException('Cupón no encontrado');
+      throw new AppException(ErrorCodes.COUPON_NOT_FOUND, 'Cupón no encontrado', 404);
     }
     return coupon;
   }
@@ -64,10 +61,10 @@ export class CouponsService {
     const code = dto.code.toUpperCase().trim();
     const exists = await this.prisma.coupon.findUnique({ where: { code } });
     if (exists) {
-      throw new ConflictException('Código ya existe');
+      throw new AppException(ErrorCodes.COUPON_CODE_ALREADY_EXISTS, 'Código ya existe', 409);
     }
     if (dto.type === 'PERCENTAGE' && (dto.value < 1 || dto.value > 100)) {
-      throw new BadRequestException('Porcentaje debe ser entre 1 y 100');
+      throw new AppException(ErrorCodes.COUPON_PERCENTAGE_OUT_OF_RANGE, 'Porcentaje debe ser entre 1 y 100', 400);
     }
 
     return this.prisma.coupon.create({
@@ -91,7 +88,7 @@ export class CouponsService {
       dto.value !== undefined &&
       (dto.value < 1 || dto.value > 100)
     ) {
-      throw new BadRequestException('Porcentaje debe ser entre 1 y 100');
+      throw new AppException(ErrorCodes.COUPON_PERCENTAGE_OUT_OF_RANGE, 'Porcentaje debe ser entre 1 y 100', 400);
     }
     return this.prisma.coupon.update({
       where: { id },
@@ -121,21 +118,21 @@ export class CouponsService {
       where: { code: code.toUpperCase() },
     });
     if (!coupon) {
-      throw new BadRequestException('Cupón inválido');
+      throw new AppException(ErrorCodes.COUPON_INVALID, 'Cupón inválido', 400);
     }
     if (!coupon.active) {
-      throw new BadRequestException('Cupón inactivo');
+      throw new AppException(ErrorCodes.COUPON_INACTIVE, 'Cupón inactivo', 400);
     }
     const now = new Date();
     if (coupon.validFrom && now < coupon.validFrom) {
-      throw new BadRequestException('Cupón aún no válido');
+      throw new AppException(ErrorCodes.COUPON_NOT_YET_VALID, 'Cupón aún no válido', 400);
     }
     if (coupon.validUntil && now > coupon.validUntil) {
-      throw new BadRequestException('Cupón expirado');
+      throw new AppException(ErrorCodes.COUPON_EXPIRED, 'Cupón expirado', 400);
     }
     if (coupon.maxUses !== null && coupon.maxUses !== undefined) {
       if (coupon.usedCount >= coupon.maxUses) {
-        throw new BadRequestException('Cupón agotado');
+        throw new AppException(ErrorCodes.COUPON_MAX_USES_REACHED, 'Cupón agotado', 400);
       }
     }
     if (
@@ -143,8 +140,10 @@ export class CouponsService {
       coupon.minOrderAmount !== undefined &&
       subtotalGross < coupon.minOrderAmount
     ) {
-      throw new BadRequestException(
+      throw new AppException(
+        ErrorCodes.COUPON_MIN_AMOUNT_NOT_MET,
         `El subtotal debe ser al menos ${coupon.minOrderAmount}`,
+        400,
       );
     }
 
