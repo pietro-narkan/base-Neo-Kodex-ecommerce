@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -16,6 +17,7 @@ import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { PasswordResetService } from './password-reset.service';
 import type { JwtPayload } from './types';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(

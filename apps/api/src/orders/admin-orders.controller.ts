@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { OrderStatus } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -29,6 +30,8 @@ function parseDateOrUndefined(s: string | undefined): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+@ApiTags('Admin · Orders')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/orders')
 export class AdminOrdersController {

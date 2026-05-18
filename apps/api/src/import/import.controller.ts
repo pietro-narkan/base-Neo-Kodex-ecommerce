@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -19,6 +20,8 @@ import type { ColumnMappings } from './wc-csv-parser';
 
 const MAX_CSV_BYTES = 25 * 1024 * 1024; // 25 MB (5k rows × ~2-5 KB)
 
+@ApiTags('Admin · Import')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/products/import')
 export class ImportController {

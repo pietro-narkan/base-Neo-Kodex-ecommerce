@@ -1,9 +1,11 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/decorators/public.decorator';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CategoriesService } from './categories.service';
 
+@ApiTags('Categories')
 @Public()
 @Controller('categories')
 export class CategoriesController {

@@ -7,11 +7,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { MediaService } from './media.service';
 
+@ApiTags('Admin · Media')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/media')
 export class AdminMediaController {

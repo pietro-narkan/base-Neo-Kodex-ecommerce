@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireRoles } from '../auth/decorators/roles.decorator';
@@ -26,6 +27,8 @@ import {
  * @RequireRoles() empty = super-ADMIN only.
  * Exception: /me/password is open to any admin via a per-handler opt-out.
  */
+@ApiTags('Admin · Admins')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @RequireRoles()
 @Controller('admin/admins')

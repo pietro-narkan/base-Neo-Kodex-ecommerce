@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -19,6 +20,8 @@ import {
   UpdateAttributeDto,
 } from './dto/attributes.dto';
 
+@ApiTags('Admin · Attributes')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/attributes')
 export class AdminAttributesController {

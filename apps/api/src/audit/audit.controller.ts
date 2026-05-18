@@ -1,4 +1,5 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { RequireRoles } from '../auth/decorators/roles.decorator';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
@@ -6,6 +7,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuditService } from './audit.service';
 
 /** Audit log is sensitive — super-ADMIN only. */
+@ApiTags('Admin · Audit')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @RequireRoles()
 @Controller('admin/audit-log')

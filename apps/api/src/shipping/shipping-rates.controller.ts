@@ -7,6 +7,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireRoles } from '../auth/decorators/roles.decorator';
@@ -23,6 +24,8 @@ interface UpsertBody {
   active?: boolean;
 }
 
+@ApiTags('Admin · Shipping')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @Controller('admin/shipping-rates')
 export class ShippingRatesController {

@@ -1,10 +1,13 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { RequireRoles } from '../auth/decorators/roles.decorator';
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CustomersService } from './customers.service';
 
+@ApiTags('Admin · Customers')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @RequireRoles('ORDERS_MANAGER', 'VIEWER')
 @Controller('admin/customers')

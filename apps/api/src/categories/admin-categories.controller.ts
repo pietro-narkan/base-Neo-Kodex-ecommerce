@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -18,6 +19,8 @@ import {
   UpdateCategoryDto,
 } from './dto/categories.dto';
 
+@ApiTags('Admin · Categories')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/categories')
 export class AdminCategoriesController {

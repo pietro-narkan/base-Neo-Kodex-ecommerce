@@ -1,8 +1,11 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { SeoService } from './seo.service';
 
+@ApiTags('SEO')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/seo')
 export class SeoController {
