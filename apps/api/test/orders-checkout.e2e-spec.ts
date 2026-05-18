@@ -120,7 +120,14 @@ describe('POST /orders/checkout (guest)', () => {
       },
     });
     expect(res.statusCode).toBe(400);
-    expect((res.json() as { message?: string }).message).toMatch(/stock/i);
+    const body = res.json() as
+      | { message: string }
+      | { error: { message: string } };
+    const raw =
+      'error' in body && typeof body.error === 'object' && body.error !== null
+        ? (body.error as { message: string }).message
+        : (body as { message: string }).message;
+    expect(raw).toMatch(/stock/i);
 
     // Stock unchanged (the 2 we set)
     const reloaded = await prisma.variant.findUnique({ where: { id: fixture.variantId } });

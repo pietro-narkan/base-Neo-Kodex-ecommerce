@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Headers,
   Param,
@@ -10,6 +9,9 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import type { FastifyRequest } from 'fastify';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -47,7 +49,11 @@ export class OrdersController {
     @Query() query: CustomerOrderListQueryDto,
   ) {
     if (user.type !== 'customer') {
-      throw new ForbiddenException('Solo clientes pueden ver sus órdenes');
+      throw new AppException(
+        ErrorCodes.AUTH_FORBIDDEN,
+        'Solo clientes pueden ver sus órdenes',
+        403,
+      );
     }
     return this.orders.listMine(user.sub, {
       page: query.page,
@@ -58,7 +64,7 @@ export class OrdersController {
   @Get(':id')
   getMine(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     if (user.type !== 'customer') {
-      throw new ForbiddenException();
+      throw new AppException(ErrorCodes.AUTH_FORBIDDEN, 'Forbidden', 403);
     }
     return this.orders.getMine(user.sub, id);
   }

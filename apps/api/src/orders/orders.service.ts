@@ -1,9 +1,7 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import type { DocumentType, OrderStatus, Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit/audit.service';
@@ -79,7 +77,7 @@ export class OrdersService {
   }) {
     const cart = await this.findCart(params);
     if (cart.items.length === 0) {
-      throw new BadRequestException('El carrito está vacío');
+      throw new AppException(ErrorCodes.CART_EMPTY, 'El carrito está vacío', 400);
     }
 
     // Cálculo del envío ANTES de la transacción (no bloquea DB en una llamada externa).
@@ -110,8 +108,10 @@ export class OrdersService {
             where: { id: item.variantId },
             include: { product: true },
           });
-          throw new BadRequestException(
+          throw new AppException(
+            ErrorCodes.STOCK_INSUFFICIENT,
             `Stock insuficiente para ${variant?.product.name ?? 'producto'} (SKU ${variant?.sku ?? item.variantId})`,
+            400,
           );
         }
       }
@@ -267,15 +267,19 @@ export class OrdersService {
       // intento de bypass del selector.
       const enabled = await this.payment.getEnabledProviderIds();
       if (enabled.length === 0) {
-        throw new BadRequestException(
+        throw new AppException(
+          ErrorCodes.ORDER_STATE_INVALID,
           'No hay métodos de pago habilitados. Configurá uno en /admin/payments.',
+          400,
         );
       }
       let providerId: (typeof enabled)[number] | undefined = params.dto
         .paymentMethod as (typeof enabled)[number] | undefined;
       if (providerId && !enabled.includes(providerId)) {
-        throw new BadRequestException(
+        throw new AppException(
+          ErrorCodes.ORDER_STATE_INVALID,
           `El método de pago "${providerId}" no está habilitado.`,
+          400,
         );
       }
       if (!providerId) providerId = enabled[0];
@@ -304,7 +308,7 @@ export class OrdersService {
       this.logger.error(
         `Payment init falló para orden ${order.orderNumber}: ${(err as Error).message}`,
       );
-      if (err instanceof BadRequestException) throw err;
+      if (err instanceof AppException) throw err;
     }
 
     // Email "orden recibida" con instrucciones de pago (best-effort, no tira errores)
@@ -361,7 +365,7 @@ export class OrdersService {
       include: orderInclude,
     });
     if (!order || order.customerId !== customerId) {
-      throw new NotFoundException('Orden no encontrada');
+      throw new AppException(ErrorCodes.ORDER_NOT_FOUND, 'Orden no encontrada', 404);
     }
     return order;
   }
@@ -491,7 +495,7 @@ export class OrdersService {
     actor: { id: string; email: string },
   ) {
     if (!input.content?.trim()) {
-      throw new BadRequestException('El contenido de la nota es obligatorio');
+      throw new AppException(ErrorCodes.ORDER_NOTE_EMPTY, 'El contenido de la nota es obligatorio', 400);
     }
     await this.getByIdAdmin(orderId);
     const note = await this.prisma.orderNote.create({
@@ -522,7 +526,7 @@ export class OrdersService {
   ) {
     const note = await this.prisma.orderNote.findUnique({ where: { id: noteId } });
     if (!note || note.orderId !== orderId) {
-      throw new NotFoundException('Nota no encontrada');
+      throw new AppException(ErrorCodes.ORDER_NOTE_NOT_FOUND, 'Nota no encontrada', 404);
     }
     await this.prisma.orderNote.delete({ where: { id: noteId } });
     await this.audit.log({
@@ -602,7 +606,7 @@ export class OrdersService {
       include: orderInclude,
     });
     if (!order) {
-      throw new NotFoundException('Orden no encontrada');
+      throw new AppException(ErrorCodes.ORDER_NOT_FOUND, 'Orden no encontrada', 404);
     }
     return order;
   }
@@ -639,11 +643,11 @@ export class OrdersService {
     actor: { id: string; email: string },
   ) {
     if (!Number.isInteger(newQty) || newQty < 1) {
-      throw new BadRequestException('Cantidad inválida (debe ser >= 1)');
+      throw new AppException(ErrorCodes.ORDER_QUANTITY_INVALID, 'Cantidad inválida (debe ser >= 1)', 400);
     }
     const order = await this.getByIdAdmin(orderId);
     const item = order.items.find((i) => i.id === itemId);
-    if (!item) throw new NotFoundException('Item no encontrado en esta orden');
+    if (!item) throw new AppException(ErrorCodes.ORDER_ITEM_NOT_FOUND, 'Item no encontrado en esta orden', 404);
     const delta = newQty - item.quantity;
     if (delta === 0) return order;
 
@@ -657,8 +661,10 @@ export class OrdersService {
             data: { stock: { decrement: delta } },
           });
           if (result.count === 0) {
-            throw new BadRequestException(
+            throw new AppException(
+              ErrorCodes.STOCK_INSUFFICIENT,
               `Stock insuficiente para aumentar a ${newQty} unidades`,
+              400,
             );
           }
         } else {
@@ -712,7 +718,7 @@ export class OrdersService {
   ) {
     const order = await this.getByIdAdmin(orderId);
     const item = order.items.find((i) => i.id === itemId);
-    if (!item) throw new NotFoundException('Item no encontrado en esta orden');
+    if (!item) throw new AppException(ErrorCodes.ORDER_ITEM_NOT_FOUND, 'Item no encontrado en esta orden', 404);
 
     await this.prisma.$transaction(async (tx) => {
       if (this.isStockActive(order.status) && item.variantId) {
@@ -826,8 +832,10 @@ export class OrdersService {
               data: { stock: { decrement: item.quantity } },
             });
             if (result.count === 0) {
-              throw new BadRequestException(
+              throw new AppException(
+                ErrorCodes.STOCK_INSUFFICIENT,
                 `No se puede reactivar: stock insuficiente para SKU ${item.sku}`,
+                400,
               );
             }
           }
@@ -1104,7 +1112,7 @@ export class OrdersService {
         where: { customerId: params.customerId },
         include: cartIncludeForCheckout,
       });
-      if (!cart) throw new NotFoundException('No hay carrito activo');
+      if (!cart) throw new AppException(ErrorCodes.CART_NOT_FOUND, 'No hay carrito activo', 404);
       return cart;
     }
     if (params.sessionId) {
@@ -1112,11 +1120,13 @@ export class OrdersService {
         where: { sessionId: params.sessionId },
         include: cartIncludeForCheckout,
       });
-      if (!cart) throw new NotFoundException('No hay carrito activo');
+      if (!cart) throw new AppException(ErrorCodes.CART_NOT_FOUND, 'No hay carrito activo', 404);
       return cart;
     }
-    throw new BadRequestException(
+    throw new AppException(
+      ErrorCodes.ORDER_STATE_INVALID,
       'Requiere autenticación o header X-Cart-Session',
+      400,
     );
   }
 
