@@ -15,7 +15,7 @@ describe('Health endpoints', () => {
   });
 
   it('GET /api/health returns 200 with uptime', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/health' });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { status: string; uptime: number };
     expect(body.status).toBe('ok');
@@ -23,7 +23,7 @@ describe('Health endpoints', () => {
   });
 
   it('GET /api/health/ready returns 200 with checks payload', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/health/ready' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/health/ready' });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       status: string;
