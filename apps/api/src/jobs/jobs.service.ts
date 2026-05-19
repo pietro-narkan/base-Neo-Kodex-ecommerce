@@ -40,7 +40,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     this.boss = new PgBoss({
       connectionString,
       schema: 'pgboss',
-      newJobCheckIntervalSeconds: Math.max(1, Math.floor(pollInterval / 1000)),
+      pollingIntervalSeconds: Math.max(1, Math.floor(pollInterval / 1000)),
       application_name: 'neo-kodex-api',
     });
 
@@ -96,7 +96,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
   async work<T>(
     name: string,
     handler: (job: { id: string; data: T }) => Promise<void>,
-    options: { teamSize?: number; teamConcurrency?: number } = {},
+    options: { batchSize?: number } = {},
   ): Promise<void> {
     if (!this.boss) throw new Error('JobsService not initialized');
     await this.ensureQueue(name);
@@ -106,10 +106,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     // pg-boss v10: callback receives an array of jobs, not a single job
     await this.boss.work<T>(
       name,
-      {
-        teamSize: options.teamSize ?? concurrency,
-        teamConcurrency: options.teamConcurrency ?? concurrency,
-      },
+      { batchSize: options.batchSize ?? concurrency },
       async (jobs) => {
         await Promise.all(
           jobs.map((job) => handler({ id: job.id, data: job.data })),
