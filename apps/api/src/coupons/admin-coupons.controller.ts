@@ -9,12 +9,15 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CouponsService } from './coupons.service';
 import { CreateCouponDto, UpdateCouponDto } from './dto/coupons.dto';
 
+@ApiTags('Admin · Coupons')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/coupons')
 export class AdminCouponsController {

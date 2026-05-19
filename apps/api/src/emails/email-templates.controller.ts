@@ -7,6 +7,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -42,6 +43,8 @@ class SendTestDto {
   html?: string;
 }
 
+@ApiTags('Admin · Emails')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @Controller('admin/email-templates')
 export class EmailTemplatesController {

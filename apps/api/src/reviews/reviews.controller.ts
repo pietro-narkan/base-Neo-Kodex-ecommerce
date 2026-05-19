@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { ReviewStatus } from '@prisma/client';
 import {
   IsBoolean,
@@ -92,6 +93,7 @@ class ReplyDto {
 // Public controller — storefront
 // ============================================================
 
+@ApiTags('Reviews')
 @Controller('reviews')
 export class ReviewsPublicController {
   constructor(private readonly service: ReviewsService) {}
@@ -146,6 +148,8 @@ export class ReviewsPublicController {
 
 const VALID_STATUSES: ReviewStatus[] = ['PENDING', 'APPROVED', 'HIDDEN'];
 
+@ApiTags('Reviews')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @Controller('admin/reviews')
 export class ReviewsAdminController {

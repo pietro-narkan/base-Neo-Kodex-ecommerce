@@ -7,6 +7,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
 
 import { Public } from '../auth/decorators/public.decorator';
@@ -29,6 +30,7 @@ import { PaymentService } from '../providers/payment.service';
  * Tomamos params tanto de body como de query para cubrir ambos. Redirigimos
  * al storefront con el orderNumber para que el cliente vea su confirmación.
  */
+@ApiTags('Payments')
 @Controller('payments/webpay')
 export class WebpayReturnController {
   private readonly logger = new Logger('WebpayReturn');

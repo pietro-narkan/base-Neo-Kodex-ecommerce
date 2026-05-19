@@ -52,7 +52,7 @@ describe('Auth', () => {
     it('returns access + refresh tokens on valid credentials', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/admin/login',
+        url: '/api/v1/auth/admin/login',
         payload: { email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PWD },
       });
       expect(res.statusCode).toBe(201);
@@ -68,7 +68,7 @@ describe('Auth', () => {
     it('returns 401 on wrong password', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/admin/login',
+        url: '/api/v1/auth/admin/login',
         payload: { email: TEST_ADMIN_EMAIL, password: 'wrong' },
       });
       expect(res.statusCode).toBe(401);
@@ -77,7 +77,7 @@ describe('Auth', () => {
     it('returns 401 on unknown email', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/admin/login',
+        url: '/api/v1/auth/admin/login',
         payload: { email: 'no-such-email@test.local', password: 'x' },
       });
       expect(res.statusCode).toBe(401);
@@ -86,7 +86,7 @@ describe('Auth', () => {
     it('audits failed login attempts', async () => {
       await app.inject({
         method: 'POST',
-        url: '/api/auth/admin/login',
+        url: '/api/v1/auth/admin/login',
         payload: { email: TEST_ADMIN_EMAIL, password: 'wrong' },
       });
       const entries = await prisma.auditLog.findMany({
@@ -101,7 +101,7 @@ describe('Auth', () => {
     it('requestReset returns ok even for unknown emails (anti-enumeration)', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/forgot-password',
+        url: '/api/v1/auth/forgot-password',
         payload: { email: 'does-not-exist@test.local', userKind: 'ADMIN' },
       });
       expect(res.statusCode).toBe(201);
@@ -112,7 +112,7 @@ describe('Auth', () => {
       await prisma.passwordResetToken.deleteMany({});
       await app.inject({
         method: 'POST',
-        url: '/api/auth/forgot-password',
+        url: '/api/v1/auth/forgot-password',
         payload: { email: TEST_ADMIN_EMAIL, userKind: 'ADMIN' },
       });
       const admin = await prisma.admin.findUnique({ where: { email: TEST_ADMIN_EMAIL } });
@@ -127,7 +127,7 @@ describe('Auth', () => {
     it('rejects expired or invalid tokens', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/reset-password',
+        url: '/api/v1/auth/reset-password',
         payload: { token: 'bogus', userKind: 'ADMIN', newPassword: 'newpass123' },
       });
       expect(res.statusCode).toBe(400);
@@ -140,7 +140,7 @@ describe('Auth', () => {
       for (const weak of weakPasswords) {
         const res = await app.inject({
           method: 'POST',
-          url: '/api/auth/customer/register',
+          url: '/api/v1/auth/customer/register',
           payload: {
             email: `test-weak-${weak.slice(0, 4)}@test.local`,
             password: weak,
@@ -162,7 +162,7 @@ describe('Auth', () => {
     it('accepts a reasonably strong password', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/customer/register',
+        url: '/api/v1/auth/customer/register',
         payload: {
           email: 'test-strong@test.local',
           password: 'Tr0ub4dor&3-mueble',
@@ -180,14 +180,14 @@ describe('Auth', () => {
     it('rotates tokens when given a valid refresh token', async () => {
       const loginRes = await app.inject({
         method: 'POST',
-        url: '/api/auth/admin/login',
+        url: '/api/v1/auth/admin/login',
         payload: { email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PWD },
       });
       const { refreshToken } = loginRes.json() as { refreshToken: string };
 
       const refreshRes = await app.inject({
         method: 'POST',
-        url: '/api/auth/refresh',
+        url: '/api/v1/auth/refresh',
         headers: { authorization: `Bearer ${refreshToken}` },
       });
       expect(refreshRes.statusCode).toBe(201);
@@ -199,7 +199,7 @@ describe('Auth', () => {
     it('returns 401 without refresh token', async () => {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/auth/refresh',
+        url: '/api/v1/auth/refresh',
       });
       expect(res.statusCode).toBe(401);
     });

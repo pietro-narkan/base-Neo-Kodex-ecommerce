@@ -1,6 +1,7 @@
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -44,10 +45,10 @@ async function bootstrap() {
   //  - everything else: 100 req / minute (generous for normal traffic)
   // On exceed: 429 with Retry-After header.
   const AUTH_PATHS = new Set([
-    '/api/auth/admin/login',
-    '/api/auth/customer/login',
-    '/api/auth/forgot-password',
-    '/api/auth/reset-password',
+    '/api/v1/auth/admin/login',
+    '/api/v1/auth/customer/login',
+    '/api/v1/auth/forgot-password',
+    '/api/v1/auth/reset-password',
   ]);
   const isAuthRoute = (url: string): boolean => AUTH_PATHS.has(url);
 
@@ -85,9 +86,32 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+    prefix: 'v',
+  });
+
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Neo-Kodex Ecommerce API')
+    .setDescription(
+      'Headless ecommerce platform API. ' +
+        'Auth via Bearer JWT. Errors follow {error:{code,message,details,requestId}}.',
+    )
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addServer('/', 'Current host')
+    .build();
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, swaggerDocument, {
+    jsonDocumentUrl: 'api/docs-json',
+  });
+
   await app.listen(port, '0.0.0.0');
   // eslint-disable-next-line no-console
-  console.log(`[api] listening on http://localhost:${port}/api`);
+  console.log(
+    `[api] listening on http://localhost:${port}/api/v1 (docs: /api/docs)`,
+  );
 }
 
 bootstrap();

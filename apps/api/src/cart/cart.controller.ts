@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -35,6 +36,7 @@ function identityFrom(
   return { customerId, sessionId };
 }
 
+@ApiTags('Cart')
 @Public()
 @UseGuards(OptionalJwtAuthGuard)
 @Controller('cart')
@@ -107,6 +109,7 @@ export class CartController {
 }
 
 // Endpoint que SÍ requiere cliente autenticado
+@ApiTags('Cart')
 @Controller('cart')
 export class CustomerCartController {
   constructor(private readonly cart: CartService) {}

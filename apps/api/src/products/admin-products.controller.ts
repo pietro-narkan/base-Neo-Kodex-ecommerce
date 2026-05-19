@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ProductStatus } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -28,6 +29,8 @@ interface BulkBody {
   status?: ProductStatus;
 }
 
+@ApiTags('Admin · Products')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin/products')
 export class AdminProductsController {

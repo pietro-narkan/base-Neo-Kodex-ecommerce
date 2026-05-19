@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 
 import { AppException } from '../common/errors/app-exception';
 import { ErrorCodes } from '../common/errors/codes';
@@ -26,6 +27,7 @@ import { OrdersService } from './orders.service';
 
 type ReqWithUser = FastifyRequest & { user?: JwtPayload };
 
+@ApiTags('Orders')
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}

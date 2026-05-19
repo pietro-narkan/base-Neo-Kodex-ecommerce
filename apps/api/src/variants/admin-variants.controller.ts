@@ -8,11 +8,14 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { CreateVariantDto, UpdateVariantDto } from './dto/variants.dto';
 import { VariantsService } from './variants.service';
 
+@ApiTags('Admin · Variants')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard)
 @Controller('admin')
 export class AdminVariantsController {

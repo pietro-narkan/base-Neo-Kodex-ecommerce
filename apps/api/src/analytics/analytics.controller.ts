@@ -7,6 +7,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsString } from 'class-validator';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -28,6 +29,8 @@ class UpdateAnalyticsDto {
   bodyHtml!: string;
 }
 
+@ApiTags('Analytics')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @Controller('admin/analytics')
 export class AnalyticsAdminController {
@@ -65,6 +68,7 @@ export class AnalyticsAdminController {
  * de tracking. No expone nada sensible: los scripts ya son client-side y
  * visibles para cualquier visitante que abra el view-source del sitio.
  */
+@ApiTags('Analytics')
 @Controller('public/analytics')
 export class AnalyticsPublicController {
   constructor(private readonly service: AnalyticsService) {}

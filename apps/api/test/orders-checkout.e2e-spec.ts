@@ -37,7 +37,7 @@ describe('POST /orders/checkout (guest)', () => {
     // Create a cart with one item via the public Cart endpoint.
     const addRes = await app.inject({
       method: 'POST',
-      url: '/api/cart/items',
+      url: '/api/v1/cart/items',
       headers: { 'x-cart-session': sessionId, 'content-type': 'application/json' },
       payload: { variantId: fixture.variantId, quantity: qty },
     });
@@ -52,7 +52,7 @@ describe('POST /orders/checkout (guest)', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/orders/checkout',
+      url: '/api/v1/orders/checkout',
       headers: { 'x-cart-session': sessionId, 'content-type': 'application/json' },
       payload: {
         email,
@@ -104,7 +104,7 @@ describe('POST /orders/checkout (guest)', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/orders/checkout',
+      url: '/api/v1/orders/checkout',
       headers: { 'x-cart-session': sessionId, 'content-type': 'application/json' },
       payload: {
         email,
@@ -143,7 +143,7 @@ describe('POST /orders/checkout (guest)', () => {
 
       const res = await app.inject({
         method: 'POST',
-        url: '/api/orders/checkout',
+        url: '/api/v1/orders/checkout',
         headers: { 'x-cart-session': sessionId, 'content-type': 'application/json' },
         payload: {
           email,
@@ -174,7 +174,7 @@ describe('POST /orders/checkout (guest)', () => {
 
     await app.inject({
       method: 'POST',
-      url: '/api/orders/checkout',
+      url: '/api/v1/orders/checkout',
       headers: { 'x-cart-session': sessionId, 'content-type': 'application/json' },
       payload: {
         email,

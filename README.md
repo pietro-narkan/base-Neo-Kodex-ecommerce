@@ -373,6 +373,28 @@ Deploy funcionando en VPS Hostinger con Coolify + URLs provisorias sslip.io.
 **Imagen API slim (457 MB)**:
 Dockerfile con **prune stage** que ahorra ~900 MB por versión vs copiar todo el `node_modules` del build. Prisma CLI movido de `devDependencies` a `dependencies` para que `prisma migrate deploy` funcione en runtime. Entry point `dist/src/main.js` (no `dist/main.js`) por `tsconfig rootDir: "./"`.
 
+## API reference
+
+Once the API is running, the live spec and interactive UI are available at:
+
+- **Swagger UI**: http://localhost:3001/api/docs
+- **OpenAPI JSON**: http://localhost:3001/api/docs-json
+
+All endpoints live under `/api/v1/`. Auth is via Bearer JWT (admin endpoints) or `X-Cart-Session` header (guest cart).
+
+Errors follow this shape:
+
+```json
+{
+  "error": {
+    "code": "COUPON_EXPIRED",
+    "message": "Cupón vencido",
+    "details": { "code": "BIENVENIDA10" },
+    "requestId": "abc-123-def"
+  }
+}
+```
+
 ## Arquitectura clave
 
 - **Strategy pattern** en providers (`PaymentProvider`, `EmailProvider`, `DteProvider`, `ShippingProvider`): agregar nueva integración = 1 clase + 1 case en switch + env var, cero refactor del resto

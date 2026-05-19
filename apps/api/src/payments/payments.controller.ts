@@ -5,6 +5,7 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ArrayUnique, IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -39,6 +40,8 @@ class SetEnabledProvidersDto {
   providers!: ProviderId[];
 }
 
+@ApiTags('Payments')
+@ApiBearerAuth()
 @UseGuards(AdminOnlyGuard, RolesGuard)
 @Controller('admin/payments')
 export class PaymentsController {
@@ -99,6 +102,7 @@ export class PaymentsController {
  * configurados para que el cliente elija uno en el checkout. No expone
  * nada sensible (solo id, nombre y descripción).
  */
+@ApiTags('Payments')
 @Controller('public/payments')
 export class PublicPaymentsController {
   constructor(private readonly payments: PaymentsService) {}

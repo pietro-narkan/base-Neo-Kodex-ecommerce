@@ -1,8 +1,10 @@
 import { Controller, Get, Param } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/decorators/public.decorator';
 import { CouponsService } from './coupons.service';
 
+@ApiTags('Coupons')
 @Public()
 @Controller('coupons')
 export class CouponsController {
