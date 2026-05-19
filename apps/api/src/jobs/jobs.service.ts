@@ -71,10 +71,27 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     this.boss = null;
   }
 
+  private readonly ensuredQueues = new Set<string>();
+
   private async ensureQueue(name: string): Promise<void> {
     // pg-boss v10 requires queues to be created before sending jobs.
-    // createQueue is idempotent (ON CONFLICT DO NOTHING inside the stored proc).
-    await this.boss!.createQueue(name);
+    // createQueue is idempotent (ON CONFLICT DO NOTHING inside the stored proc),
+    // but concurrent createQueue calls for the same queue can deadlock on the
+    // shared row exclusive lock. Cache locally + retry once on deadlock (40P01).
+    if (this.ensuredQueues.has(name)) return;
+    try {
+      await this.boss!.createQueue(name);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === '40P01') {
+        // Concurrent createQueue deadlocked — wait briefly then retry.
+        await new Promise((r) => setTimeout(r, 150));
+        await this.boss!.createQueue(name);
+      } else {
+        throw err;
+      }
+    }
+    this.ensuredQueues.add(name);
   }
 
   async enqueue<T extends object>(
