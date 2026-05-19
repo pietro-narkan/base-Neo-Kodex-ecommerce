@@ -1,6 +1,7 @@
 import type { Webhook, WebhookDelivery } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type PrismaService } from '../prisma/prisma.service';
 import { BACKOFF_SECONDS, MAX_ATTEMPTS, WebhookDeliveryHandler } from './webhook-delivery.handler';
 
 interface FakeDeliveryRow {
@@ -47,10 +48,10 @@ describe('WebhookDeliveryHandler', () => {
       findUnique: vi.fn(),
       update: updateMock,
     },
-  } as never;
+  } as unknown as PrismaService;
 
-  const jobs = { enqueue: enqueueMock } as never;
-  const handler = new WebhookDeliveryHandler(prisma, jobs, fetchMock as never);
+  const jobs = { enqueue: enqueueMock } as unknown as import('../jobs/jobs.service').JobsService;
+  const handler = new WebhookDeliveryHandler(prisma, jobs, fetchMock as unknown as typeof fetch);
 
   beforeEach(() => {
     fetchMock.mockReset();
@@ -64,9 +65,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('on 2xx: marks deliveredAt, no retry', async () => {
     const { delivery, webhook } = makeRow();
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -91,9 +92,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('on 5xx with attemptCount < MAX: schedules retry with backoff', async () => {
     const { delivery, webhook } = makeRow({ attemptCount: 2 });
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -122,9 +123,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('on 5xx with attemptCount at MAX-1: marks failedAt, no retry', async () => {
     const { delivery, webhook } = makeRow({ attemptCount: MAX_ATTEMPTS - 1 });
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -147,9 +148,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('on 4xx: marks failedAt immediately, no retry', async () => {
     const { delivery, webhook } = makeRow();
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockResolvedValueOnce({
       ok: false,
@@ -173,9 +174,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('on fetch timeout: treats as 5xx (retry)', async () => {
     const { delivery, webhook } = makeRow();
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockRejectedValueOnce(new Error('Timeout: 10000ms'));
 
@@ -195,9 +196,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('sends correct headers and signed body', async () => {
     const { delivery, webhook } = makeRow();
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -222,9 +223,9 @@ describe('WebhookDeliveryHandler', () => {
 
   it('truncates responseBody to 4096 chars', async () => {
     const { delivery, webhook } = makeRow();
-    prisma.webhookDelivery.findUnique = vi
-      .fn()
-      .mockResolvedValueOnce({ ...delivery, webhook });
+    vi.spyOn(prisma.webhookDelivery, 'findUnique').mockResolvedValueOnce(
+      { ...delivery, webhook } as never,
+    );
 
     const longBody = 'x'.repeat(8000);
     fetchMock.mockResolvedValueOnce({

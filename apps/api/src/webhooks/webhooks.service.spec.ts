@@ -1,16 +1,16 @@
-import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { JobsService } from '../jobs/jobs.service';
+import { type PrismaService } from '../prisma/prisma.service';
 import { WebhooksService } from './webhooks.service';
 
 describe('WebhooksService.dispatch', () => {
-  let prisma: PrismaClient;
+  let prisma: PrismaService;
   let service: WebhooksService;
   let enqueuedJobs: Array<{ name: string; data: unknown }>;
 
   beforeAll(async () => {
-    prisma = globalThis.__testPrisma as PrismaClient;
+    prisma = (globalThis as unknown as Record<string, unknown>).__testPrisma as PrismaService;
     enqueuedJobs = [];
 
     const fakeJobs = {
