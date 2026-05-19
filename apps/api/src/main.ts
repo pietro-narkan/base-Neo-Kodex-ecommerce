@@ -9,13 +9,18 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 
+import { Logger as PinoLogger } from 'nestjs-pino';
+
 import { AppModule } from './app.module';
+import { initSentry } from './common/sentry';
 
 async function bootstrap() {
+  initSentry();
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({ logger: false }),
   );
+  app.useLogger(app.get(PinoLogger));
 
   const config = app.get(ConfigService);
   const port = Number(config.get<string>('PORT')) || 3001;
