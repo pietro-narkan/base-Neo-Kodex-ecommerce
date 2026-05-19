@@ -14,6 +14,9 @@ import type { DocumentTypeLiteral } from '../providers/dte.service';
 import { PaymentService } from '../providers/payment.service';
 import { ShippingService } from '../providers/shipping.service';
 import type { AddressDto, CheckoutDto } from './dto/orders.dto';
+import { WebhooksService } from '../webhooks/webhooks.service';
+import { serializeOrderForWebhook } from '../webhooks/order-serializer';
+import type { WebhookEventName } from '../webhooks/webhooks.types';
 
 const ORDER_COUNTER_KEY = 'order.last_number';
 
@@ -68,6 +71,7 @@ export class OrdersService {
     private readonly dte: DteService,
     private readonly shipping: ShippingService,
     private readonly audit: AuditService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   async checkout(params: {
@@ -329,6 +333,17 @@ export class OrdersService {
     await this.sendAdminNewOrderEmail(order).catch((err) =>
       this.logger.warn(`Admin notification falló: ${(err as Error).message}`),
     );
+
+    this.prisma.order
+      .findUniqueOrThrow({ where: { id: order.id }, include: orderInclude })
+      .then((reloaded) =>
+        this.webhooks.dispatch('order.created', {
+          order: serializeOrderForWebhook(reloaded),
+        }),
+      )
+      .catch((err) =>
+        this.logger.error({ err }, 'order.created webhook dispatch failed'),
+      );
 
     return { ...order, paymentInstructions, paymentRedirect };
   }
@@ -898,6 +913,28 @@ export class OrdersService {
           );
         }
       }
+    }
+    const eventForStatus: Partial<Record<OrderStatus, WebhookEventName>> = {
+      PAID: 'order.paid',
+      FULFILLED: 'order.fulfilled',
+      CANCELLED: 'order.cancelled',
+      REFUNDED: 'order.refunded',
+    };
+    const eventName = eventForStatus[status];
+    if (eventName) {
+      this.prisma.order
+        .findUniqueOrThrow({ where: { id }, include: orderInclude })
+        .then((reloaded) =>
+          this.webhooks.dispatch(eventName, {
+            order: serializeOrderForWebhook(reloaded),
+          }),
+        )
+        .catch((err) =>
+          this.logger.error(
+            { err, eventName },
+            'order status webhook dispatch failed',
+          ),
+        );
     }
     return updated;
   }

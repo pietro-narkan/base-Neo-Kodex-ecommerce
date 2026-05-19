@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 
 import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,7 +21,7 @@ export class WebhookDeliveryHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jobs: JobsService,
-    private readonly fetchImpl: typeof fetch = fetch,
+    @Optional() private readonly fetchImpl: typeof fetch = fetch,
   ) {
     this.timeoutMs = Number(process.env.WEBHOOK_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
   }

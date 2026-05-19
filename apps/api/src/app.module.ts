@@ -33,6 +33,7 @@ import { ShippingRatesModule } from './shipping/shipping-rates.module';
 import { StorageModule } from './storage/storage.module';
 import { VariantsModule } from './variants/variants.module';
 import { HealthModule } from './health/health.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { HealthModule } from './health/health.module';
     CouponsModule,
     CartModule,
     OrdersModule,
+    WebhooksModule,
     ImportModule,
     SettingsModule,
     EmailsModule,
