@@ -585,3 +585,36 @@ model ProductReview {
   @@index([status])
   @@index([createdAt])
 }
+
+model Webhook {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  secret    String   // HMAC secret, hex-encoded, visible una sola vez al crear
+  events    String[] // ["order.created", "order.paid", ...]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deliveries WebhookDelivery[]
+
+  @@index([active])
+}
+
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  webhookId     String
+  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event         String
+  eventId       String    @unique
+  payload       Json
+  statusCode    Int?
+  responseBody  String?   // primeros 4KB truncado
+  attemptCount  Int       @default(0)
+  deliveredAt   DateTime?
+  failedAt      DateTime?
+  nextAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([webhookId, createdAt])
+  @@index([event, createdAt])
+}

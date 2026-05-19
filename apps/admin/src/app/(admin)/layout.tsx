@@ -19,6 +19,7 @@ import {
   Truck,
   User,
   Users,
+  Webhook,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -51,6 +52,7 @@ const nav: NavItem[] = [
   { href: '/emails', label: 'Correos', icon: Mail, adminOnly: true },
   { href: '/users', label: 'Usuarios admin', icon: Users, adminOnly: true },
   { href: '/audit-log', label: 'Registro de actividad', icon: ClipboardList, adminOnly: true },
+  { href: '/webhooks', label: 'Webhooks', icon: Webhook, adminOnly: true },
   { href: '/settings', label: 'Configuración', icon: Settings, adminOnly: true },
 ];
 
