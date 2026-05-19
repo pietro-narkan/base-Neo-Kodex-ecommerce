@@ -5,12 +5,13 @@ import { JobsService } from '../jobs/jobs.service';
 import { WebhookDeliveryHandler } from './webhook-delivery.handler';
 import { WebhooksAdminController } from './webhooks-admin.controller';
 import { WebhooksService } from './webhooks.service';
+import { WebhooksCleanupCron } from './webhooks-cleanup.cron';
 import { WEBHOOK_DELIVERY_QUEUE } from './webhooks.types';
 
 @Module({
   imports: [PrismaModule],
   controllers: [WebhooksAdminController],
-  providers: [WebhooksService, WebhookDeliveryHandler],
+  providers: [WebhooksService, WebhookDeliveryHandler, WebhooksCleanupCron],
   exports: [WebhooksService],
 })
 export class WebhooksModule implements OnApplicationBootstrap {
