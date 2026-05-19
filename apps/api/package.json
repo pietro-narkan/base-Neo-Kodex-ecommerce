@@ -51,6 +51,7 @@
     "nestjs-zod": "^3.0.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pg-boss": "^10.1.5",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "prisma": "^5.22.0",

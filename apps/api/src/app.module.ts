@@ -19,6 +19,7 @@ import { CustomersModule } from './customers/customers.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EmailsModule } from './emails/emails.module';
 import { ImportModule } from './import/import.module';
+import { JobsModule } from './jobs/jobs.module';
 import { MediaModule } from './media/media.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -95,6 +96,7 @@ import { HealthModule } from './health/health.module';
       }),
     }),
     PrismaModule,
+    JobsModule,
     StorageModule,
     HealthModule,
     ProvidersModule,

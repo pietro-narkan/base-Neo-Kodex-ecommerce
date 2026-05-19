@@ -3,7 +3,7 @@ import { HealthController } from './health.controller';
 
 describe('HealthController', () => {
   it('GET /health returns ok with uptime', () => {
-    const controller = new HealthController({} as never, {} as never);
+    const controller = new HealthController({} as never, {} as never, {} as never);
     const result = controller.live();
     expect(result.status).toBe('ok');
     expect(typeof result.uptime).toBe('number');
