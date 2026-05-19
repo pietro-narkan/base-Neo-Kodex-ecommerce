@@ -1,13 +1,11 @@
-import {
-  ConflictException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import { EmailTemplatesService } from '../emails/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthResponse, JwtPayload, UserType } from './types';
@@ -31,7 +29,11 @@ export class AuthService {
         entityType: 'admin',
         metadata: { reason: 'not_found_or_inactive' },
       });
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppException(
+        ErrorCodes.AUTH_INVALID_CREDENTIALS,
+        'Credenciales inválidas',
+        401,
+      );
     }
     const ok = await bcrypt.compare(password, admin.passwordHash);
     if (!ok) {
@@ -43,7 +45,11 @@ export class AuthService {
         entityId: admin.id,
         metadata: { reason: 'bad_password' },
       });
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppException(
+        ErrorCodes.AUTH_INVALID_CREDENTIALS,
+        'Credenciales inválidas',
+        401,
+      );
     }
     await this.audit.log({
       actorId: admin.id,
@@ -72,7 +78,11 @@ export class AuthService {
       where: { email: data.email },
     });
     if (existing && !existing.isGuest) {
-      throw new ConflictException('Email ya registrado');
+      throw new AppException(
+        ErrorCodes.EMAIL_ALREADY_REGISTERED,
+        'Email ya registrado',
+        409,
+      );
     }
     const passwordHash = await bcrypt.hash(data.password, 10);
     const customer = existing
@@ -124,11 +134,19 @@ export class AuthService {
       where: { email },
     });
     if (!customer || !customer.passwordHash || customer.isGuest) {
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppException(
+        ErrorCodes.AUTH_INVALID_CREDENTIALS,
+        'Credenciales inválidas',
+        401,
+      );
     }
     const ok = await bcrypt.compare(password, customer.passwordHash);
     if (!ok) {
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new AppException(
+        ErrorCodes.AUTH_INVALID_CREDENTIALS,
+        'Credenciales inválidas',
+        401,
+      );
     }
     return this.issueTokens({
       sub: customer.id,
@@ -143,7 +161,11 @@ export class AuthService {
     if (type === 'admin') {
       const admin = await this.prisma.admin.findUnique({ where: { id: sub } });
       if (!admin || !admin.active) {
-        throw new UnauthorizedException();
+        throw new AppException(
+          ErrorCodes.AUTH_TOKEN_INVALID,
+          'Token inválido',
+          401,
+        );
       }
       email = admin.email;
       role = admin.role;
@@ -152,7 +174,11 @@ export class AuthService {
         where: { id: sub },
       });
       if (!customer || customer.isGuest) {
-        throw new UnauthorizedException();
+        throw new AppException(
+          ErrorCodes.AUTH_TOKEN_INVALID,
+          'Token inválido',
+          401,
+        );
       }
       email = customer.email;
     }

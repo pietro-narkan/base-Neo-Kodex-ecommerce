@@ -12,6 +12,7 @@ import rateLimit from '@fastify/rate-limit';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
+import { GlobalHttpExceptionFilter } from './common/errors/global-exception.filter';
 import { initSentry } from './common/sentry';
 
 async function bootstrap() {
@@ -79,6 +80,8 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  app.useGlobalFilters(new GlobalHttpExceptionFilter());
 
   app.setGlobalPrefix('api');
 

@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { UserKind } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import { EmailTemplatesService } from '../emails/email-templates.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -103,7 +105,11 @@ export class PasswordResetService {
     }
 
     if (!matched) {
-      throw new BadRequestException('Token inválido o expirado');
+      throw new AppException(
+        ErrorCodes.PASSWORD_RESET_TOKEN_INVALID,
+        'Token inválido o expirado',
+        400,
+      );
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -15,6 +14,8 @@ import { AdminOnlyGuard } from '../auth/guards/admin-only.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { JwtPayload } from '../auth/types';
 import type { ProviderId } from '../providers/payment.service';
+import { AppException } from '../common/errors/app-exception';
+import { ErrorCodes } from '../common/errors/codes';
 import { PaymentsService } from './payments.service';
 
 class UpdateWebpayDto {
@@ -56,7 +57,11 @@ export class PaymentsController {
     @CurrentUser() user: JwtPayload,
   ) {
     if (typeof value !== 'string') {
-      throw new BadRequestException('value debe ser un string');
+      throw new AppException(
+        ErrorCodes.PAYMENT_VALIDATION,
+        'value debe ser un string',
+        400,
+      );
     }
     return this.payments.updateBankDetails(value, {
       id: user.sub,

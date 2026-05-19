@@ -5,6 +5,7 @@ const TOKEN_KEY = 'nk_token';
 const REFRESH_KEY = 'nk_refresh';
 
 export class ApiError extends Error {
+  public readonly code?: string;
   constructor(
     public readonly status: number,
     message: string,
@@ -12,6 +13,8 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+    const errObj = (body as { error?: { code?: string } } | undefined)?.error;
+    this.code = errObj?.code;
   }
 }
 
@@ -108,13 +111,16 @@ export async function api<T = unknown>(
   }
 
   if (!res.ok) {
-    const errBody = await res.json().catch(() => ({ message: res.statusText }));
-    const message =
-      typeof (errBody as { message?: unknown }).message === 'string'
-        ? ((errBody as { message: string }).message)
-        : Array.isArray((errBody as { message?: unknown }).message)
-          ? ((errBody as { message: string[] }).message).join('; ')
-          : res.statusText;
+    const errBody = await res.json().catch(() => ({}));
+    const errObj = (errBody as { error?: { code?: string; message?: string | string[] } }).error;
+    let message = res.statusText;
+    if (errObj?.message) {
+      message = Array.isArray(errObj.message) ? errObj.message.join('; ') : errObj.message;
+    } else if (typeof (errBody as { message?: unknown }).message === 'string') {
+      message = (errBody as { message: string }).message;
+    } else if (Array.isArray((errBody as { message?: unknown }).message)) {
+      message = (errBody as { message: string[] }).message.join('; ');
+    }
     throw new ApiError(res.status, message, errBody);
   }
 
