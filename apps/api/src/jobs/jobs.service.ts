@@ -48,6 +48,18 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
       this.logger.error({ err: err.message }, 'pg-boss error');
     });
 
+    this.boss.on('wip', (data: Array<{ id: string; name: string }>) => {
+      if (data.length === 0) return;
+      this.logger.debug(
+        { jobs: data.map((j) => ({ id: j.id, name: j.name })) },
+        `pg-boss work in progress (${data.length})`,
+      );
+    });
+
+    this.boss.on('monitor-states', (states) => {
+      this.logger.debug({ states }, 'pg-boss queue states');
+    });
+
     await this.boss.start();
     this.logger.log('pg-boss started (schema=pgboss)');
   }
