@@ -1,8 +1,18 @@
-# Marco 1 — Cerrar roadmap headless
+# Marco 1 — Cerrar base para uso interno de agencia
 
-> **Meta:** dejar la base como **plataforma ecommerce headless completa**, vendible a clientes B2C/B2B chicos sin asumir vertical/mercado/currency específico.
+> **Meta:** dejar la base como **plataforma operativa para instanciar N clientes de agencia**. Modelo de negocio: uso interno propio (no producto público, no se vende como tal). Para cada cliente: 1 instancia con admin sólido + storefront Next.js custom hecho por el dueño (no por terceros).
 >
-> **Estado:** pendiente (creado 2026-05-19, post deploy de sub-A + sub-B-async).
+> **Estado:** pendiente (revisión 2026-05-19 post-clarificación de modelo de negocio).
+
+---
+
+## Modelo de negocio (lente que define prioridades)
+
+- **No hay terceros consumiendo la API.** El user (agencia) construye los fronts custom de cada cliente. NO se planea ecosistema de integradores externos.
+- **Cada cliente = 1 instancia separada.** Bootstrap rápido por cliente es central al workflow.
+- **Los clientes son admins activos.** Usan el dashboard, no consumen la API. UX del admin es producto, no afterthought.
+- **Sin asunción de vertical/mercado/currency** — la base sirve cualquier rubro (ver [[feedback_base_estandar]]).
+- **Sin plugin architecture** — features se agregan editando código directamente (ver [[feedback_no_plugins]]).
 
 ---
 
@@ -10,135 +20,159 @@
 
 ✅ Fases 0–6 + post-MVP (importador WC, scripts one-off órdenes)
 ✅ Sub-proyecto A "API speaks protocol" — DEPLOYADO
-  - OpenAPI público `/api/docs` + JSON `/api/docs-json`
-  - Versionado URI `/api/v1`
-  - Observabilidad: pino estructurado + redaction + Sentry SDK + health endpoints
-  - Error shape uniforme `{error:{code,message,details,requestId}}` + códigos catalogados
 ✅ Sub-proyecto B-async "Headless integrations: async jobs + webhooks" — DEPLOYADO
-  - Cola pg-boss 10.x (Postgres-backed, sin Redis)
-  - Webhooks salientes HMAC-SHA256 + timestamp + retry 8x48h
-  - 5 eventos de orden (`order.created/paid/fulfilled/cancelled/refunded`)
-  - Admin UI: CRUD + secret rotation + test send + delivery logs
-  - Cleanup cron 30d
 
 ---
 
-## Scope pendiente del Marco 1
+## Scope del Marco 1 (re-priorizado para uso interno de agencia)
 
-### Sub-proyecto B-auth — "API keys + idempotency"
+### 1. Idempotency keys (parte de B-auth original)
 
-**Estimación:** ~4h / 1 sesión.
+**Estimación:** ~2-3h / mitad de 1 sesión.
+**Prioridad:** ALTA — protege checkout/pagos de doble-submit. Bug class real en cada cliente concreto.
 
 **Componentes:**
-- **API keys server-to-server** con scopes:
-  - Modelo Prisma `ApiKey` (id, name, hashedKey, scopes[], createdAt, lastUsedAt, expiresAt, active)
-  - Guard/strategy que reconoce header `X-Api-Key` o `Authorization: Bearer <key>`
-  - Scopes granulares: `orders:read`, `orders:write`, `products:read`, etc.
-  - Admin UI: generar (key visible una sola vez), revocar, ver scopes/lastUsed
-- **Idempotency keys** en endpoints críticos:
-  - Modelo `IdempotencyKey` (key, requestHash, response, statusCode, createdAt)
-  - Interceptor que lee `Idempotency-Key` header en `POST /api/v1/orders/checkout` y `POST /api/v1/payments/*`
-  - Si key existe + hash matches → retorna respuesta cacheada
-  - Si hash difiere → 422 conflict
-  - TTL configurable (default 24h)
+- Modelo Prisma `IdempotencyKey` (key, requestHash, response, statusCode, createdAt)
+- Interceptor que lee `Idempotency-Key` header en `POST /api/v1/orders/checkout` y `POST /api/v1/payments/*`
+- Si key existe + hash matches → retorna respuesta cacheada
+- Si hash difiere → 422 conflict
+- TTL configurable (default 24h), cleanup cron
 
 **Decisiones pre-brainstorming:**
-- Hash de keys: bcrypt o argon2? (probable bcrypt para consistencia con passwords del proyecto)
-- Scopes: enum cerrado en código o sistema más flexible? (probable enum cerrado)
-- Idempotency response cache: completo (body+status) o solo status? (probable completo)
+- Hash de body completo o partial?
+- Response cache: completo (body+status+headers) o solo body+status?
 
-**Dependencias:** ninguna (independiente de B-async).
+**Dependencias:** ninguna.
 
 ---
 
-### Sub-proyecto C — "Core trust" (tests del dominio crítico)
+### 2. Tests del core dominio (sub-proyecto C)
 
 **Estimación:** ~6-8h / 1-2 sesiones.
+**Prioridad:** ALTA — confianza al evolucionar la base con N clientes en prod. Sin esto, cada cambio en main es jugar a la lotería.
 
 **Componentes:**
-- **Tests del checkout** con race conditions:
-  - Stock atomicidad (mismo variant comprado por 2 carritos concurrentes)
-  - Cupón `maxUses` race (N carritos aplican un cupón con maxUses=1 simultáneo)
-  - Order number generation no duplica con concurrencia
-- **Tests del webhook delivery** con retry:
-  - Failure 5xx programa retry con backoff correcto
-  - 4xx no retry, marca failedAt
-  - Idempotency del receptor via X-NK-Event-Id
-- **Tests del idempotency middleware** (depende de B-auth)
-- **Tests de refunds** (status transitions, stock restore)
-- **CI ampliado** con coverage reporting (vitest --coverage)
+- **Tests del checkout** con race conditions: stock atomicidad, cupón maxUses race, order number generation concurrente.
+- **Tests del webhook delivery** con retry: 5xx → backoff correcto, 4xx → failedAt sin retry, idempotency receptor.
+- **Tests del idempotency middleware** (depende del item 1).
+- **Tests de refunds** y status transitions con stock restore.
+- **CI ampliado** con coverage reporting (vitest --coverage); target inicial 70% en módulos críticos.
 
 **Decisiones pre-brainstorming:**
-- Coverage threshold (¿80%? ¿solo módulos críticos?)
-- Tests E2E vs unit ratio
-- Integration tests usan Postgres real o mocks? (consistente con setup actual: Postgres real)
+- Coverage threshold (¿70% módulos críticos solo o 80% global?).
+- Mock vs Postgres real (consistente con setup actual: Postgres real para integration).
 
-**Dependencias:** B-auth (idempotency tests).
+**Dependencias:** idempotency (item 1).
 
 ---
 
-### Sub-proyecto D — "Search & discovery"
+### 3. Search & discovery (sub-proyecto D)
 
 **Estimación:** ~4h / 1 sesión.
+**Prioridad:** ALTA — cualquier catálogo > 30 SKUs lo necesita. Mejora UX storefront directamente.
 
 **Componentes:**
-- **Full-text search** en productos con Postgres `tsvector`:
-  - Migration: agrega `searchVector` GENERATED ALWAYS AS column en Product
-  - Index GIN sobre el vector
-  - Endpoint `GET /api/v1/products?q=<query>` con ranking
-- **Filtros expresivos en PLP**:
-  - `priceRange` (min, max)
-  - Multi-atributo (color=red,blue + talla=M)
-  - `inStock=true` (variant con stock > 0)
-  - Sort: precio asc/desc, novedad, popularidad
-- **Cursor pagination** para listas grandes (orders admin, audit log)
+- **Full-text search** en productos con Postgres `tsvector`: column `searchVector` GENERATED ALWAYS AS + index GIN.
+- Endpoint `GET /api/v1/products?q=<query>` con ranking ts_rank.
+- **Filtros expresivos en PLP**: priceRange (min/max), multi-atributo (color=red,blue + talla=M), inStock=true, sort por precio/novedad.
+- **Cursor pagination** para listas grandes (orders admin, audit log, deliveries).
 
 **Decisiones pre-brainstorming:**
-- Idioma del FTS (spanish o multi-language config)
-- Sinónimos / stemming
-- Si rinde con tsvector solo o conviene Meili/Typesense desde el inicio
+- Idioma del FTS (config español default vs multi-language config).
+- Si full-text Postgres es suficiente o conviene Meili/Typesense desde el inicio (probable: Postgres alcanza para volumen esperado).
 
-**Dependencias:** ninguna técnica (puede ir antes o después de B-auth).
+**Dependencias:** ninguna técnica.
 
 ---
 
-### Backlog: Providers reales
+### 4. Bootstrap script "nuevo cliente" 🆕
+
+**Estimación:** ~3-4h / 1 sesión.
+**Prioridad:** ALTA — central al workflow de agencia. Instanciar un cliente debe ser 1 comando, no 30 min de pasos manuales.
+
+**Componentes:**
+- Script `scripts/bootstrap-client.sh <client-slug>`:
+  - Genera secrets nuevos (JWT_SECRET, REFRESH_SECRET, MINIO credentials, POSTGRES_PASSWORD)
+  - Crea aplicación en Coolify via API (POST `/applications/public` con el compose template, basado en patrón del PR cliente 1)
+  - Set de env vars vía Coolify API
+  - Trigger primer deploy
+  - Output: URLs sslip provisorias + credenciales admin iniciales
+- Template de `docker-compose.client.yml` parametrizable (variables Coolify-magic + secrets via env)
+- Doc: `docs/clients/bootstrap.md` con el flujo end-to-end
+
+**Decisiones pre-brainstorming:**
+- ¿Crear cliente con DB completamente fresh (migrations + seed) o restaurar de un snapshot template?
+- ¿Subdominio por cliente o sslip.io provisorio + DNS manual después?
+- Branding inicial (logo, store name): por seed config o post-deploy en /admin?
+
+**Dependencias:** ninguna técnica. Se beneficia de Sub-A ya deployado (los nuevos clientes tienen observabilidad de entrada).
+
+---
+
+### 5. Providers reales
 
 **Estimación:** ~6-12h total, depende cuántos. Cada uno ~1-2h.
+**Prioridad:** ALTA — cada cliente concreto necesita pagos/DTE/shipping reales.
 
 Implementaciones reales de los providers ya abstraídos (strategy pattern interno, no plugins):
 
-| Categoría | Providers | Estimado por uno |
+| Categoría | Providers | Por uno |
 |---|---|---|
-| **Payments** | MercadoPago, Flow, Khipu | ~1-2h cada |
-| **DTE (Chile)** | Openfactura, Haulmer | ~1-2h cada |
-| **Shipping** | Chilexpress, Starken | ~1-2h cada |
+| **Payments** | MercadoPago, Flow, Khipu (Webpay ya está) | ~1-2h |
+| **DTE (Chile)** | Openfactura, Haulmer | ~1-2h |
+| **Shipping** | Chilexpress, Starken | ~1-2h |
 | **Email** | Resend (Brevo ya está) | ~1h |
 
 **Decisiones pre-brainstorming:**
-- ¿Implementar todos los 8 o solo los del primer cliente?
-- ¿Sandbox vs prod credentials per provider?
+- ¿Implementar todos los 8 o solo los del primer cliente concreto?
 - ¿Cada provider necesita UI admin para configurar API keys o solo env vars?
+- ¿Sandbox vs prod credentials per provider?
 
-**Dependencias:** ninguna técnica; benefician de B-auth (admin UI para activar/configurar).
+**Dependencias:** ninguna técnica. Se beneficia de UI admin de Settings (item 6).
+
+---
+
+### 6. Audit log UI navegable + Reportes admin 🆕
+
+**Estimación:** ~4-5h / 1-2 sesiones.
+**Prioridad:** MEDIA-ALTA — tus clientes son admins activos. El modelo `AuditLog` ya existe en schema pero sin UI navegable; los reportes básicos ya están en `DashboardModule` pero limitados.
+
+**Componentes:**
+- **Audit log UI** (`/admin/audit-log`): tabla paginada con filtros (admin, action, dateRange), JSON viewer expandible para metadata, exportable a CSV.
+- **Reportes ampliados** en `/admin/dashboard` o nueva ruta `/admin/reports`:
+  - Sales por período (día/semana/mes)
+  - Top N productos vendidos
+  - Low stock alert (variantes < N stock)
+  - Customer cohort básico (nuevos vs returning últimos 30d)
+  - Orders por status (pie chart)
+- **Stock alerts notification** (email a admin cuando variant baja de umbral configurable).
+
+**Decisiones pre-brainstorming:**
+- Charts library (recharts vs chart.js vs algo más simple? actualmente no hay).
+- Estos reportes corren on-demand o se cachean en una tabla materializada?
+
+**Dependencias:** ninguna técnica.
 
 ---
 
 ## Orden sugerido de ejecución
 
 ```
-1. B-auth          (4h)    → desbloquea idempotency tests + UI activation de providers
-2. C (parcial)     (3h)    → tests críticos del core: checkout, webhooks, idempotency
-3. D               (4h)    → search + filtros (mejora UX storefront sin esperar)
-4. Providers       (6-12h) → empezar por los más urgentes según primer cliente
-5. C (resto)       (3-5h)  → tests cross-cutting, coverage targets, e2e ampliado
+1. Idempotency keys     (~2-3h)   → protege checkout/pagos
+2. C tests core         (~6-8h)   → confianza al evolucionar con N clientes
+3. D search + filtros   (~4h)     → mejora UX storefront sin tocar prod
+4. Bootstrap script     (~3-4h)   → desbloquea workflow de agencia
+5. Providers reales     (~6-12h)  → empezar por los del primer cliente concreto
+6. Audit UI + reportes  (~4-5h)   → admin pulido para clientes activos
 ```
 
 **Razones del orden:**
-- B-auth primero porque desbloquea tests de C (idempotency) y UI de providers
-- D temprano porque es independiente y aporta valor visible al storefront sin tocar prod
-- Providers después de B-auth para que el admin UI de configuración tenga API keys protection
-- C cierra el ciclo: cuando tenemos todas las features, locked-in con tests del dominio
+- Idempotency primero porque es bug class real + chico + no bloquea nada.
+- Tests segundo porque desbloquea evolucionar sin miedo.
+- Search tercero porque es independiente y aporta valor visible al storefront sin tocar prod.
+- Bootstrap script cuarto porque después de eso, instanciar clientes es rápido.
+- Providers después de bootstrap porque cada cliente nuevo va a necesitar configurar los suyos.
+- Audit/reportes último porque es polish del admin, no bloquea ningún cliente arrancar.
 
 ---
 
@@ -146,48 +180,48 @@ Implementaciones reales de los providers ya abstraídos (strategy pattern intern
 
 | Bloque | Esfuerzo | Sesiones (3-4h c/u) |
 |---|---|---|
-| B-auth | 4h | 1 |
-| C (tests core) | 6-8h | 1-2 |
-| D (search) | 4h | 1 |
-| Providers reales (4-8 de ellos) | 6-12h | 2-3 |
-| **TOTAL** | **20-28h** | **5-7 sesiones** |
+| 1. Idempotency | 2-3h | 0.5-1 |
+| 2. C tests core | 6-8h | 1.5-2 |
+| 3. D search | 4h | 1 |
+| 4. Bootstrap script | 3-4h | 1 |
+| 5. Providers reales (4-8 de ellos) | 6-12h | 2-3 |
+| 6. Audit + reportes | 4-5h | 1-2 |
+| **TOTAL** | **25-36h** | **7-10 sesiones** |
 
-Con contingencias (debugging deploy, fixes durante implementación — patrón observado en sesiones anteriores): **×1.3-1.5 = 26-42h reales / 7-10 sesiones**.
-
----
-
-## Decisiones pendientes pre-brainstorming (cuando arranquemos cada sub-proyecto)
-
-Cada sub-proyecto se brainstorm/spec/implementa por separado siguiendo el patrón establecido en sub-A y sub-B-async:
-1. `superpowers:brainstorming` para confirmar scope + decisiones
-2. `superpowers:writing-plans` para plan ejecutable
-3. `superpowers:subagent-driven-development` para implementación
+Con contingencias (debugging deploy, fixes durante implementación — patrón observado): **×1.3-1.5 = 32-54h reales / 8-13 sesiones**.
 
 ---
 
-## Out of scope de Marco 1 (a futuro)
+## Out of scope de Marco 1
 
-Lo siguiente NO entra en Marco 1, va al backlog post-cierre:
+### Movido a "futuro cuando aparezca demanda"
+- **API keys server-to-server con scopes**: solo tiene sentido si un cliente concreto pide que un ERP/CRM externo le consuma la API. Si pasa, se hace en ese momento. Mientras tanto, admin con JWT alcanza.
 
+### Descartado del scope (no aplica al modelo de negocio)
+- **SDK cliente TypeScript** (`packages/sdk`): vos escribís cada front custom directamente con fetch o un helper interno por cliente. No se necesita SDK formal.
+- **Auto-deploy webhook GitHub-Coolify**: nice-to-have, no bloqueante. Se activa cuando vos quieras vía Coolify UI.
+
+### Backlog futuro (sin compromiso de Marco 1)
 - Returns/RMAs (flujo devoluciones con stock restock)
+- Refunds parciales
 - Inventory multi-bodega (stock_locations)
 - Promotions engine sofisticado (BOGO, free-shipping condicional)
 - Multi-currency, multi-region tax
 - B2B features (customer groups, price lists)
 - Subscriptions / recurring orders
 - Gift cards
-- SDK cliente TypeScript (`packages/sdk`)
-- Refunds parciales
 
-Estos NO están descartados — pueden volver al backlog si un cliente concreto los pide. Pero no son meta de Marco 1 (que apunta a "plataforma headless completa para B2C/B2B chicos vendibles").
+Estos NO están descartados — pueden volver si un cliente concreto los pide. Pero no son meta de Marco 1.
 
 ---
 
 ## Cómo retomar este Marco
 
 Cuando vuelvas a una sesión y quieras seguir:
-1. Decime "arrancamos con B-auth" (o el sub-proyecto que prefieras).
+1. Decime **"arrancamos con idempotency"** (o el item que prefieras).
 2. Yo invoco `superpowers:brainstorming` → cierra scope + decisiones técnicas → escribe spec.
 3. Invoco `superpowers:writing-plans` → plan ejecutable.
 4. Invoco `superpowers:subagent-driven-development` → implementación con review per task.
-5. Cuando todos los PRs están listos, cascade merge + deploy (con `docker system prune` periódico para evitar OOM como aprendimos en sub-B-async).
+5. Cuando todos los PRs están listos, cascade merge + deploy con cleanup periódico (`docker system prune`) para evitar OOM.
+
+Pattern aprendido en sub-A y sub-B-async funciona bien — replicar.
