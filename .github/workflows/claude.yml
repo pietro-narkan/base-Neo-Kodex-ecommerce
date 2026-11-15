@@ -1,0 +1,65 @@
+name: Claude Code
+
+# Elegir modelo/esfuerzo por tarea: en el comentario/review/issue que menciona @claude
+# incluye [model:fable|opus|sonnet|haiku] y/o [effort:low|medium|high|xhigh|max].
+# Sin etiqueta se usa el modelo/esfuerzo por defecto de Claude Code.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Select model and effort from trigger text
+        id: opts
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          case "$EVENT_NAME" in
+            issue_comment|pull_request_review_comment) TEXT="$COMMENT_BODY" ;;
+            pull_request_review) TEXT="$REVIEW_BODY" ;;
+            issues) TEXT="$ISSUE_TITLE"$'\n'"$ISSUE_BODY" ;;
+            *) TEXT="" ;;
+          esac
+          MODEL=$(printf '%s' "$TEXT" | grep -ioE '\[model:[[:space:]]*(opus|sonnet|haiku|fable)[[:space:]]*\]' | head -n1 | tr '[:upper:]' '[:lower:]' | grep -oE 'opus|sonnet|haiku|fable' || true)
+          EFFORT=$(printf '%s' "$TEXT" | grep -ioE '\[effort:[[:space:]]*(low|medium|high|xhigh|max)[[:space:]]*\]' | head -n1 | tr '[:upper:]' '[:lower:]' | grep -oE 'xhigh|low|medium|high|max' | head -n1 || true)
+          ARGS=""
+          [ -n "$MODEL" ] && ARGS="--model $MODEL"
+          [ -n "$EFFORT" ] && ARGS="$ARGS --effort $EFFORT"
+          echo "Modelo: ${MODEL:-default de Claude Code} | Esfuerzo: ${EFFORT:-default}"
+          echo "claude_args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: ${{ steps.opts.outputs.claude_args }}
